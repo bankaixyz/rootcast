@@ -34,6 +34,13 @@ pub enum DestinationChain {
     BaseSepolia,
     OpSepolia,
     ArbitrumSepolia,
+    SolanaDevnet,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum DestinationKind {
+    Evm,
+    Solana,
 }
 
 impl DestinationChain {
@@ -42,6 +49,7 @@ impl DestinationChain {
             Self::BaseSepolia => 84_532,
             Self::OpSepolia => 11_155_420,
             Self::ArbitrumSepolia => 421_614,
+            Self::SolanaDevnet => 103,
         }
     }
 
@@ -50,6 +58,7 @@ impl DestinationChain {
             Self::BaseSepolia => "base-sepolia",
             Self::OpSepolia => "op-sepolia",
             Self::ArbitrumSepolia => "arbitrum-sepolia",
+            Self::SolanaDevnet => "solana-devnet",
         }
     }
 
@@ -58,6 +67,23 @@ impl DestinationChain {
             Self::BaseSepolia => "BASE_SEPOLIA",
             Self::OpSepolia => "OP_SEPOLIA",
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
+            Self::SolanaDevnet => "SOLANA_DEVNET",
+        }
+    }
+
+    pub const fn kind(self) -> DestinationKind {
+        match self {
+            Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => DestinationKind::Evm,
+            Self::SolanaDevnet => DestinationKind::Solana,
+        }
+    }
+
+    pub const fn target_address_env(self) -> &'static str {
+        match self {
+            Self::BaseSepolia => "BASE_SEPOLIA_REGISTRY_ADDRESS",
+            Self::OpSepolia => "OP_SEPOLIA_REGISTRY_ADDRESS",
+            Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA_REGISTRY_ADDRESS",
+            Self::SolanaDevnet => "SOLANA_DEVNET_PROGRAM_ID",
         }
     }
 }

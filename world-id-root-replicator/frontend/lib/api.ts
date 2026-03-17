@@ -12,7 +12,7 @@ export type StatusResponse = {
 export type ReplicationTarget = {
   chain_name: string;
   chain_id: number;
-  registry_address: string;
+  target_address: string;
   submission_state: string;
   tx_hash: string | null;
   error_message: string | null;
@@ -47,7 +47,7 @@ export type RootSnapshot = {
 export type ChainStatus = {
   chain_name: string;
   chain_id: number;
-  registry_address: string;
+  target_address: string;
   latest_job_id: number | null;
   latest_root_hex: string | null;
   latest_source_block_number: number | null;

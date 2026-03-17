@@ -27,7 +27,7 @@ pub fn router(pool: SqlitePool, destination_chains: Vec<DestinationChainConfig>)
         .map(|chain| ConfiguredChain {
             name: chain.name(),
             chain_id: chain.chain_id(),
-            registry_address: chain.registry_address.to_string(),
+            target_address: chain.target_address,
         })
         .collect();
 
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(snapshot["replication_triggered"], false);
 
         let targets = snapshot["targets"].as_array().unwrap();
-        assert_eq!(targets.len(), 3);
+        assert_eq!(targets.len(), 4);
         assert!(targets
             .iter()
             .all(|target| target["display_state"] == "blocked"));
@@ -331,6 +331,7 @@ mod tests {
             destination(DestinationChain::BaseSepolia),
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
+            destination(DestinationChain::SolanaDevnet),
         ]
     }
 
@@ -339,14 +340,18 @@ mod tests {
             DestinationChain::BaseSepolia => "0123",
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
+            DestinationChain::SolanaDevnet => "solana",
         };
 
         DestinationChainConfig {
             chain,
             rpc_url: "https://example.invalid".to_string(),
-            registry_address: format!("0x000000000000000000000000000000000000{suffix}")
-                .parse()
-                .unwrap(),
+            target_address: match chain {
+                DestinationChain::SolanaDevnet => {
+                    "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx".to_string()
+                }
+                _ => format!("0x000000000000000000000000000000000000{suffix}"),
+            },
             private_key: "0x01".to_string(),
         }
     }

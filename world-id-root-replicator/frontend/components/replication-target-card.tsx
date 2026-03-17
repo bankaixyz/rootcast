@@ -1,5 +1,5 @@
 import { ReplicationTarget } from "@/lib/api";
-import { chainLabel, chainTxUrl } from "@/lib/chain-metadata";
+import { chainLabel, chainTargetLabel, chainTxUrl } from "@/lib/chain-metadata";
 import { shortHash } from "@/lib/format";
 import { StatusBadge, toneForDisplayState } from "@/components/status-badge";
 
@@ -31,8 +31,8 @@ export function ReplicationTargetCard({
 
       <div className="target-card__footer">
         <span>
-          <span className="label">Registry</span>{" "}
-          <code className="mono-value">{shortHash(target.registry_address, 10, 8)}</code>
+          <span className="label">{chainTargetLabel(target.chain_name)}</span>{" "}
+          <code className="mono-value">{shortHash(target.target_address, 10, 8)}</code>
         </span>
         <span>
           <span className="label">Chain id</span> {target.chain_id}

@@ -11,6 +11,7 @@ The repository contains:
   read-only API
 - `program/` for the SP1 guest program
 - `contracts/` for the destination-chain root registry and verifier integration
+- `solana/` for the Solana Devnet root registry, tests, and deploy scripts
 - `frontend/` for the read-only landing page and replication dashboard
 
 ## Provenance
@@ -37,13 +38,31 @@ The current implementation includes:
 - exact-block proof-bundle retrieval
 - SP1 public values and proof artifact handling
 - contract-side SP1 verifier and program-vkey binding
+- Solana Devnet registry workspace, deploy scripts, and backend submitter path
 - World ID root source constants
 - read-only API endpoints for status, roots, chains, and job detail
-- a dark frontend landing page and dashboard for replication state
+- a dark frontend landing page and dashboard for mixed EVM and Solana
+  replication state
 
 The remaining work is live end-to-end validation against deployed verifier and
-registry contracts, plus the Phase 5 deployment and productionization work.
+registry targets, plus the Phase 5 deployment and productionization work.
 
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script
 `contracts/script/deploy_registry.sh`.
+
+For Solana Devnet setup, deploy, and initialization, see
+[`solana/README.md`](solana/README.md).
+
+## Current Solana Devnet deployment
+
+The current Solana Devnet deployment is:
+
+- program id:
+  `CGPJkHwUYwubDNoaLwEMMNqHcHkKz3wB3SKb2ST4i2G1`
+- state PDA:
+  `2emanoFQqqozegXYLWb6bjEB1xS1qKZxnPMr8EHKanaJ`
+- deploy signature:
+  `2wXRocS8xyQFjm7vPfmEsvWtRzQD69hpUtskejyLtaXK1h9mPv2ipLatHMC5Wb9zTbL74W8pbGaoJHqwGXMkk9EN`
+- initialize signature:
+  `2p7V1nt8BLz6w31ftsbCcuMky2kXMg2e1M9dQm2tuonKoqDqqW3rgEtGsJQjBTaUap2SXcPmfXC7LYEqfuojzPxq`

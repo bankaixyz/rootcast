@@ -1,5 +1,4 @@
-use crate::jobs::types::DestinationChain;
-use alloy_primitives::Address;
+use crate::jobs::types::{DestinationChain, DestinationKind};
 use anyhow::{Context, Result};
 use bankai_sdk::Network;
 use std::env;
@@ -20,7 +19,7 @@ pub struct Config {
 pub struct DestinationChainConfig {
     pub chain: DestinationChain,
     pub rpc_url: String,
-    pub registry_address: Address,
+    pub target_address: String,
     pub private_key: String,
 }
 
@@ -31,6 +30,10 @@ impl DestinationChainConfig {
 
     pub const fn chain_id(&self) -> u64 {
         self.chain.chain_id()
+    }
+
+    pub const fn kind(&self) -> DestinationKind {
+        self.chain.kind()
     }
 }
 
@@ -65,6 +68,7 @@ impl Config {
                 destination_chain_config(DestinationChain::BaseSepolia)?,
                 destination_chain_config(DestinationChain::OpSepolia)?,
                 destination_chain_config(DestinationChain::ArbitrumSepolia)?,
+                destination_chain_config(DestinationChain::SolanaDevnet)?,
             ],
         })
     }
@@ -76,7 +80,7 @@ fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainC
     Ok(DestinationChainConfig {
         chain,
         rpc_url: required(&format!("{prefix}_RPC_URL"))?,
-        registry_address: parse_address(&format!("{prefix}_REGISTRY_ADDRESS"))?,
+        target_address: required(chain.target_address_env())?,
         private_key: required(&format!("{prefix}_PRIVATE_KEY"))?,
     })
 }
@@ -94,12 +98,6 @@ fn optional_bool(name: &str) -> Result<Option<bool>> {
         Err(env::VarError::NotPresent) => Ok(None),
         Err(error) => Err(error).with_context(|| format!("failed to read {name}")),
     }
-}
-
-fn parse_address(name: &str) -> Result<Address> {
-    required(name)?
-        .parse()
-        .with_context(|| format!("{name} must be a valid address"))
 }
 
 impl std::str::FromStr for BankaiNetwork {

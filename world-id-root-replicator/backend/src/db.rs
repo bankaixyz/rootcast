@@ -146,7 +146,7 @@ pub struct ChainSubmissionRow {
     pub submission_id: i64,
     pub chain_name: String,
     pub chain_id: i64,
-    pub registry_address: String,
+    pub target_address: String,
     pub submission_state: String,
     pub submission_tx_hash: Option<String>,
     pub submission_error_message: Option<String>,
@@ -158,7 +158,7 @@ pub struct ChainSubmission {
     pub submission_id: i64,
     pub chain_name: String,
     pub chain_id: u64,
-    pub registry_address: String,
+    pub target_address: String,
     pub submission_state: ChainSubmissionState,
     pub submission_tx_hash: Option<String>,
     pub submission_error_message: Option<String>,
@@ -173,7 +173,7 @@ impl TryFrom<ChainSubmissionRow> for ChainSubmission {
             submission_id: row.submission_id,
             chain_name: row.chain_name,
             chain_id: u64::try_from(row.chain_id).context("chain_id does not fit in u64")?,
-            registry_address: row.registry_address,
+            target_address: row.target_address,
             submission_state: row.submission_state.parse()?,
             submission_tx_hash: row.submission_tx_hash,
             submission_error_message: row.submission_error_message,
@@ -477,7 +477,7 @@ pub async fn record_observed_root(
                 replication_job_id,
                 chain_name,
                 chain_id,
-                registry_address,
+                target_address,
                 state
             ) VALUES (?, ?, ?, ?, ?)
             "#,
@@ -485,7 +485,7 @@ pub async fn record_observed_root(
         .bind(job_id)
         .bind(destination.name())
         .bind(to_i64(destination.chain_id())?)
-        .bind(destination.registry_address.to_string())
+        .bind(&destination.target_address)
         .bind(ChainSubmissionState::Pending.as_db_str())
         .execute(&mut *tx)
         .await?;
@@ -566,7 +566,7 @@ pub async fn job_submissions(pool: &SqlitePool, job_id: i64) -> Result<Vec<Chain
             id AS submission_id,
             chain_name,
             chain_id,
-            registry_address,
+            target_address,
             state AS submission_state,
             tx_hash AS submission_tx_hash,
             error_message AS submission_error_message,

@@ -5,6 +5,7 @@ import {
   chainAddressUrl,
   chainLabel,
   chainOrder,
+  chainTargetLabel,
   chainTxUrl,
   sourceTxUrl,
 } from "@/lib/chain-metadata";
@@ -18,7 +19,7 @@ type ReplicationTopologyProps = {
 
 type TopologyTarget = {
   chain_name: string;
-  registry_address: string | null;
+  target_address: string | null;
   display_state:
     | "idle"
     | "blocked"
@@ -167,16 +168,16 @@ export function ReplicationTopology({
 
                 <div className="target-node__rows">
                   <TargetRow
-                    label="Contract"
+                    label={chainTargetLabel(target.chain_name)}
                     value={
-                      target.registry_address ? (
+                      target.target_address ? (
                         <a
                           className="data-link"
-                          href={chainAddressUrl(target.chain_name, target.registry_address)}
+                          href={chainAddressUrl(target.chain_name, target.target_address)}
                           rel="noreferrer"
                           target="_blank"
                         >
-                          {shortHash(target.registry_address, 8, 6)}
+                          {shortHash(target.target_address, 8, 6)}
                         </a>
                       ) : (
                         "Pending"
@@ -395,7 +396,7 @@ function buildTargets(
   for (const chain of chains) {
     merged.set(chain.chain_name, {
       chain_name: chain.chain_name,
-      registry_address: chain.registry_address,
+      target_address: chain.target_address,
       display_state: chain.display_state,
       tx_hash: chain.tx_hash,
       blocked_reason: chain.blocked_reason,
@@ -407,7 +408,7 @@ function buildTargets(
     if (!merged.has(target.chain_name)) {
       merged.set(target.chain_name, {
         chain_name: target.chain_name,
-        registry_address: target.registry_address,
+        target_address: target.target_address,
         display_state: target.display_state,
         tx_hash: target.tx_hash,
         blocked_reason: target.blocked_reason,
@@ -420,7 +421,7 @@ function buildTargets(
     for (const chainName of allKnownTargetChains()) {
       merged.set(chainName, {
         chain_name: chainName,
-        registry_address: null,
+        target_address: null,
         display_state: "idle",
         tx_hash: null,
         blocked_reason: null,

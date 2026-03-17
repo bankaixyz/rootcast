@@ -1,4 +1,7 @@
+pub mod solana;
+
 use crate::config::DestinationChainConfig;
+use crate::jobs::types::DestinationKind;
 use crate::proving::sp1::load_proof;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
@@ -8,6 +11,8 @@ use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{sol, SolCall};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+
+pub use solana::SolanaSubmitter;
 
 sol! {
     function submitRoot(bytes proofBytes, bytes publicValues) external;
@@ -21,11 +26,7 @@ pub enum SubmissionCheck {
 
 #[async_trait]
 pub trait SubmissionClient: Send + Sync {
-    async fn submit_artifact(
-        &self,
-        registry_address: Address,
-        artifact_path: &str,
-    ) -> Result<String>;
+    async fn submit_artifact(&self, target_address: &str, artifact_path: &str) -> Result<String>;
     async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck>;
 }
 
@@ -57,11 +58,10 @@ impl EvmSubmitter {
 
 #[async_trait]
 impl SubmissionClient for EvmSubmitter {
-    async fn submit_artifact(
-        &self,
-        registry_address: Address,
-        artifact_path: &str,
-    ) -> Result<String> {
+    async fn submit_artifact(&self, target_address: &str, artifact_path: &str) -> Result<String> {
+        let registry_address: Address = target_address
+            .parse()
+            .with_context(|| format!("parse {} target address", self.destination.name()))?;
         let proof = load_proof(artifact_path)?;
         let call = submitRootCall {
             proofBytes: proof.bytes().into(),
@@ -99,5 +99,14 @@ impl SubmissionClient for EvmSubmitter {
                 self.destination.name()
             )))
         }
+    }
+}
+
+pub fn build_submission_client(
+    destination: DestinationChainConfig,
+) -> Result<Box<dyn SubmissionClient>> {
+    match destination.kind() {
+        DestinationKind::Evm => Ok(Box::new(EvmSubmitter::new(destination))),
+        DestinationKind::Solana => Ok(Box::new(SolanaSubmitter::new(destination)?)),
     }
 }
