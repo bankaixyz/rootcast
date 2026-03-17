@@ -34,3 +34,6 @@ ethereum_hashing = { git = "https://github.com/bankaixyz/ethereum_hashing", rev 
 
 [build-dependencies]
 sp1-build = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5.2", features = ["util"] }

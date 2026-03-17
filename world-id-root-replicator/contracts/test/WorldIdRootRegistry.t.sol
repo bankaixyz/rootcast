@@ -31,7 +31,7 @@ contract WorldIdRootRegistryTest {
         require(registry.roots(sourceBlockNumber) == root, "stored root mismatch");
     }
 
-    function test_submitRootIsIdempotentForSameValues() public {
+    function test_submitRootRejectsReplayForSameSourceBlock() public {
         uint64 sourceBlockNumber = 12_345;
         bytes32 root = bytes32(uint256(2));
         bytes memory proofBytes = hex"beef";
@@ -39,11 +39,12 @@ contract WorldIdRootRegistryTest {
 
         verifier.expectVerify(PROGRAM_VKEY, publicValues, proofBytes);
         registry.submitRoot(proofBytes, publicValues);
-        registry.submitRoot(proofBytes, publicValues);
 
-        require(registry.latestSourceBlock() == sourceBlockNumber, "latestSourceBlock mismatch");
-        require(registry.latestRoot() == root, "latestRoot mismatch");
-        require(registry.roots(sourceBlockNumber) == root, "stored root mismatch");
+        (bool ok, bytes memory revertData) =
+            address(registry).call(abi.encodeCall(registry.submitRoot, (proofBytes, publicValues)));
+
+        require(!ok, "expected stale source block revert");
+        require(_selector(revertData) == WorldIdRootRegistry.StaleSourceBlock.selector, "wrong revert selector");
     }
 
     function test_submitRootAcceptsValidProofFromAnyCaller() public {
@@ -73,7 +74,7 @@ contract WorldIdRootRegistryTest {
         require(_selector(revertData) == MockVerifier.MockProofRejected.selector, "wrong revert selector");
     }
 
-    function test_submitRootRejectsConflictingRootForSameSourceBlock() public {
+    function test_submitRootRejectsDifferentRootReplayForSameSourceBlock() public {
         bytes memory firstProofBytes = hex"01";
         bytes memory firstPublicValues = abi.encode(uint64(7), bytes32(uint256(1)));
         verifier.expectVerify(PROGRAM_VKEY, firstPublicValues, firstProofBytes);
@@ -86,11 +87,11 @@ contract WorldIdRootRegistryTest {
         (bool ok, bytes memory revertData) =
             address(registry).call(abi.encodeCall(registry.submitRoot, (secondProofBytes, secondPublicValues)));
 
-        require(!ok, "expected conflicting root revert");
-        require(_selector(revertData) == WorldIdRootRegistry.ConflictingRoot.selector, "wrong revert selector");
+        require(!ok, "expected stale source block revert");
+        require(_selector(revertData) == WorldIdRootRegistry.StaleSourceBlock.selector, "wrong revert selector");
     }
 
-    function test_submitRootDoesNotRegressLatestRootForOlderSourceBlocks() public {
+    function test_submitRootRejectsOlderSourceBlocks() public {
         bytes memory newerProofBytes = hex"03";
         bytes memory newerPublicValues = abi.encode(uint64(9), bytes32(uint256(9)));
         verifier.expectVerify(PROGRAM_VKEY, newerPublicValues, newerProofBytes);
@@ -98,17 +99,14 @@ contract WorldIdRootRegistryTest {
 
         bytes memory olderProofBytes = hex"04";
         bytes memory olderPublicValues = abi.encode(uint64(8), bytes32(uint256(8)));
-        verifier.expectVerify(PROGRAM_VKEY, olderPublicValues, olderProofBytes);
-        registry.submitRoot(olderProofBytes, olderPublicValues);
 
+        (bool ok, bytes memory revertData) =
+            address(registry).call(abi.encodeCall(registry.submitRoot, (olderProofBytes, olderPublicValues)));
+
+        require(!ok, "expected stale source block revert");
+        require(_selector(revertData) == WorldIdRootRegistry.StaleSourceBlock.selector, "wrong revert selector");
         require(registry.roots(uint64(9)) == bytes32(uint256(9)), "newer root missing");
-        require(registry.roots(uint64(8)) == bytes32(uint256(8)), "older root missing");
-        require(registry.latestSourceBlock() == uint64(9), "latestSourceBlock regressed");
-        require(registry.latestRoot() == bytes32(uint256(9)), "latestRoot regressed");
-
-        verifier.expectVerify(PROGRAM_VKEY, olderPublicValues, olderProofBytes);
-        registry.submitRoot(olderProofBytes, olderPublicValues);
-
+        require(registry.roots(uint64(8)) == bytes32(0), "older root should not be stored");
         require(registry.latestSourceBlock() == uint64(9), "latestSourceBlock changed");
         require(registry.latestRoot() == bytes32(uint256(9)), "latestRoot changed");
     }

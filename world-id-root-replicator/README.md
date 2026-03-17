@@ -7,10 +7,11 @@ pins, lockfile behavior, and SP1 build conventions.
 
 The repository contains:
 
-- `backend/` for runtime config, database startup, and future orchestration
+- `backend/` for runtime config, database startup, orchestration, and the
+  read-only API
 - `program/` for the SP1 guest program
 - `contracts/` for the destination-chain root registry and verifier integration
-- `frontend/` for the future read-only dashboard shell
+- `frontend/` for the read-only landing page and replication dashboard
 
 ## Provenance
 
@@ -37,9 +38,11 @@ The current implementation includes:
 - SP1 public values and proof artifact handling
 - contract-side SP1 verifier and program-vkey binding
 - World ID root source constants
+- read-only API endpoints for status, roots, chains, and job detail
+- a dark frontend landing page and dashboard for replication state
 
 The remaining work is live end-to-end validation against deployed verifier and
-registry contracts, multichain fan-out, and frontend rendering.
+registry contracts, plus the Phase 5 deployment and productionization work.
 
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script

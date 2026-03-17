@@ -10920,6 +10920,7 @@ dependencies = [
  "sp1-sdk",
  "sqlx",
  "tokio",
+ "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
 ]

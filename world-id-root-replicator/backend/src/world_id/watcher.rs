@@ -28,11 +28,15 @@ pub trait RootWatcher: Send + Sync {
 
 pub struct WorldIdWatcher {
     rpc_url: String,
+    enforce_min_proof_request_gap: bool,
 }
 
 impl WorldIdWatcher {
-    pub fn new(rpc_url: String) -> Self {
-        Self { rpc_url }
+    pub fn new(rpc_url: String, enforce_min_proof_request_gap: bool) -> Self {
+        Self {
+            rpc_url,
+            enforce_min_proof_request_gap,
+        }
     }
 }
 
@@ -87,8 +91,21 @@ impl RootWatcher for WorldIdWatcher {
 
         match observed_root_from_log(logs.last().expect("logs is not empty")) {
             Ok(observed_root) => {
-                let record = db::record_observed_root(pool, &observed_root, destinations).await?;
-                if record.created {
+                let record = db::record_observed_root(
+                    pool,
+                    &observed_root,
+                    destinations,
+                    self.enforce_min_proof_request_gap,
+                )
+                .await?;
+                if record.created && record.skipped {
+                    info!(
+                        root = %observed_root.root_hex,
+                        source_block_number = observed_root.source_block_number,
+                        source_tx_hash = %observed_root.source_tx_hash,
+                        "skipped World ID root because the previous proof is newer than 50 minutes"
+                    );
+                } else if record.created {
                     info!(
                         root = %observed_root.root_hex,
                         source_block_number = observed_root.source_block_number,

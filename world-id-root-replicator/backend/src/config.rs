@@ -10,6 +10,7 @@ pub struct Config {
     pub database_url: String,
     pub listen_addr: SocketAddr,
     pub bankai_network: BankaiNetwork,
+    pub enforce_min_proof_request_gap: bool,
     pub sp1_prover: String,
     pub execution_rpc: String,
     pub destination_chains: Vec<DestinationChainConfig>,
@@ -56,6 +57,8 @@ impl Config {
                 .parse()
                 .context("LISTEN_ADDR must be a valid socket address")?,
             bankai_network: required("BANKAI_NETWORK")?.parse()?,
+            enforce_min_proof_request_gap: optional_bool("ENFORCE_MIN_PROOF_REQUEST_GAP")?
+                .unwrap_or(false),
             sp1_prover: required("SP1_PROVER")?,
             execution_rpc: required("EXECUTION_RPC")?,
             destination_chains: vec![
@@ -80,6 +83,17 @@ fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainC
 
 fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} must be set"))
+}
+
+fn optional_bool(name: &str) -> Result<Option<bool>> {
+    match env::var(name) {
+        Ok(value) => value
+            .parse()
+            .map(Some)
+            .with_context(|| format!("{name} must be `true` or `false`")),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("failed to read {name}")),
+    }
 }
 
 fn parse_address(name: &str) -> Result<Address> {

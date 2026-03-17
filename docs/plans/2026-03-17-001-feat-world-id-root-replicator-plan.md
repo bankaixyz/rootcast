@@ -401,14 +401,14 @@ This phase makes the running system observable.
 
 Deliverables:
 
-- [ ] Implement API handlers in
+- [x] Implement API handlers in
       `world-id-root-replicator/backend/src/api/`
-- [ ] Build landing page in
+- [x] Build landing page in
       `world-id-root-replicator/frontend/app/page.tsx`
-- [ ] Build dashboard page in
+- [x] Build dashboard page in
       `world-id-root-replicator/frontend/app/dashboard/page.tsx`
-- [ ] Render current root, source block, chain cards, recent jobs, and errors
-- [ ] Apply dark theme and responsive layout
+- [x] Render current root, source block, chain cards, recent jobs, and errors
+- [x] Apply dark theme and responsive layout
 
 Success criteria:
 

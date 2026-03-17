@@ -1,5 +1,15 @@
 # Frontend
 
-This directory is a Phase 1 placeholder for the read-only frontend. It exists
-to reserve the application structure and will become a dark-themed landing page
-plus dashboard in later phases.
+This directory contains the read-only frontend for the World ID root
+replicator.
+
+The frontend currently includes:
+
+- a dark landing page that explains the trust flow
+- an operations dashboard for the latest root update and replication targets
+- a small typed API client for the backend read model
+- reusable status components for target cards, stage banners, and recent updates
+
+The frontend stays intentionally small. It uses Next.js app routes, server-side
+data fetching, lightweight auto-refresh, and a custom dark theme rather than a
+large component library or client-state framework.

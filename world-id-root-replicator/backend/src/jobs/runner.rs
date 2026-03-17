@@ -17,7 +17,6 @@ use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(5);
-const MIN_PROOF_REQUEST_AGE_SECS: i64 = 50 * 60;
 
 pub struct Runner {
     pool: SqlitePool,
@@ -31,7 +30,10 @@ pub struct Runner {
 
 impl Runner {
     pub fn from_config(config: Config, pool: SqlitePool) -> Result<Self> {
-        let watcher = Arc::new(WorldIdWatcher::new(config.execution_rpc.clone()));
+        let watcher = Arc::new(WorldIdWatcher::new(
+            config.execution_rpc.clone(),
+            config.enforce_min_proof_request_gap,
+        ));
         let finality_client = Arc::new(BankaiFinalityClient::new(
             config.bankai_network,
             config.execution_rpc.clone(),
@@ -161,27 +163,42 @@ impl Runner {
             decision = "ready_to_prove",
             "checked Bankai finality"
         );
-        db::mark_observed_root_finalized(&self.pool, job.observed_root_id).await?;
+        db::mark_observed_root_finalized(&self.pool, job.observed_root_id, finalized_height)
+            .await?;
         db::update_job_state(&self.pool, job.job_id, ReplicationJobState::ReadyToProve).await?;
         Ok(())
     }
 
     async fn advance_ready_to_prove(&self, job: ActiveJob) -> Result<()> {
-        if job.proof_requested_at.is_none() {
-            if let Some(last_request) = db::latest_proof_request(&self.pool).await? {
-                if last_request.age_seconds < MIN_PROOF_REQUEST_AGE_SECS {
-                    return Ok(());
-                }
-            }
-        }
-
+        info!(
+            job_id = job.job_id,
+            root = %job.root_hex,
+            source_block_number = job.source_block_number,
+            "fetching exact Bankai proof bundle"
+        );
         let bundle_bytes = match self
             .bundle_client
             .fetch_exact_block_bundle(job.source_block_number)
             .await
         {
-            Ok(bundle) => bundle,
+            Ok(bundle) => {
+                info!(
+                    job_id = job.job_id,
+                    root = %job.root_hex,
+                    source_block_number = job.source_block_number,
+                    bundle_size_bytes = bundle.len(),
+                    "fetched exact Bankai proof bundle"
+                );
+                bundle
+            }
             Err(error) => {
+                warn!(
+                    ?error,
+                    job_id = job.job_id,
+                    root = %job.root_hex,
+                    source_block_number = job.source_block_number,
+                    "failed to fetch exact Bankai proof bundle"
+                );
                 db::mark_job_retryable(
                     &self.pool,
                     job.job_id,
@@ -194,6 +211,12 @@ impl Runner {
         };
 
         db::mark_job_proof_in_progress(&self.pool, job.job_id).await?;
+        info!(
+            job_id = job.job_id,
+            root = %job.root_hex,
+            source_block_number = job.source_block_number,
+            "requesting SP1 proof"
+        );
 
         let expected_public_values = PublicValues {
             source_block_number: job.source_block_number,
@@ -213,6 +236,15 @@ impl Runner {
                     ReplicationJobState::ReadyToProve
                 };
 
+                warn!(
+                    ?error,
+                    job_id = job.job_id,
+                    root = %job.root_hex,
+                    source_block_number = job.source_block_number,
+                    next_state = %next_state,
+                    "SP1 proof generation failed"
+                );
+
                 if next_state == ReplicationJobState::Failed {
                     db::mark_job_failed(&self.pool, job.job_id, &error.to_string()).await?;
                 } else {
@@ -230,6 +262,13 @@ impl Runner {
         };
 
         db::mark_job_proof_ready(&self.pool, job.job_id, &proof_artifact.path).await?;
+        info!(
+            job_id = job.job_id,
+            root = %job.root_hex,
+            source_block_number = job.source_block_number,
+            artifact_path = %proof_artifact.path,
+            "SP1 proof artifact is ready"
+        );
         Ok(())
     }
 
@@ -624,10 +663,10 @@ mod tests {
             source_tx_hash: "0xaaa".to_string(),
         };
 
-        let created = db::record_observed_root(&pool, &observed_root, &destinations)
+        let created = db::record_observed_root(&pool, &observed_root, &destinations, false)
             .await
             .unwrap();
-        let created_again = db::record_observed_root(&pool, &observed_root, &destinations)
+        let created_again = db::record_observed_root(&pool, &observed_root, &destinations, false)
             .await
             .unwrap();
 
@@ -668,6 +707,7 @@ mod tests {
                 source_tx_hash: "0x222".to_string(),
             },
             &destinations,
+            false,
         )
         .await
         .unwrap();
@@ -979,12 +1019,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_rate_limits_new_proof_requests() {
+    async fn recent_proof_requests_do_not_block_new_jobs_during_dev() {
         let pool = test_pool().await;
         let destinations = vec![destination(DestinationChain::BaseSepolia)];
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
         });
+
+        record_root(&pool, &destinations, [3u8; 32], 100, "0xold").await;
+        sqlx::query(
+            r#"
+            UPDATE replication_jobs
+            SET
+                state = ?,
+                proof_requested_at = datetime('now', '-51 minutes')
+            "#,
+        )
+        .bind(ReplicationJobState::Completed.as_db_str())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let created = db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([7u8; 32])),
+                source_block_number: 12_345,
+                source_tx_hash: "0xnew".to_string(),
+            },
+            &destinations,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(created.created);
+        assert!(!created.skipped);
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            proof_service.clone(),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::ProofReady);
+        assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn recent_proof_requests_skip_new_jobs_when_gap_is_enabled() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
 
         record_root(&pool, &destinations, [3u8; 32], 100, "0xold").await;
         sqlx::query(
@@ -1000,29 +1092,36 @@ mod tests {
         .await
         .unwrap();
 
-        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xnew").await;
+        let created = db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([7u8; 32])),
+                source_block_number: 12_345,
+                source_tx_hash: "0xnew".to_string(),
+            },
+            &destinations,
+            true,
+        )
+        .await
+        .unwrap();
 
-        let runner = Runner::new_for_tests(
-            pool.clone(),
-            destinations.clone(),
-            fake_clients_for(&destinations),
-            Arc::new(NoopWatcher),
-            Arc::new(StaticFinalityClient { height: 12_345 }),
-            Arc::new(StaticBundleClient),
-            proof_service.clone(),
-        );
+        let skipped_status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT status
+            FROM observed_roots
+            WHERE source_block_number = ?
+            "#,
+        )
+        .bind(12_345_i64)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
-        runner.advance_once().await.unwrap();
-        assert_eq!(
-            db::next_active_job(&pool).await.unwrap().unwrap().job_state,
-            ReplicationJobState::ReadyToProve
-        );
-
-        runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool).await.unwrap().unwrap();
-        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
-        assert!(job.proof_requested_at.is_none());
-        assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 0);
+        assert!(created.created);
+        assert!(created.skipped);
+        assert_eq!(created.replaced_pending_count, 0);
+        assert_eq!(skipped_status, "skipped");
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
     }
 
     async fn test_pool() -> SqlitePool {
@@ -1055,6 +1154,7 @@ mod tests {
                 source_tx_hash: tx_hash.to_string(),
             },
             destinations,
+            false,
         )
         .await
         .unwrap();

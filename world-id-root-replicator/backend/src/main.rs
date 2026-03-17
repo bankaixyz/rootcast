@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    let app = api::router();
+    let app = api::router(pool.clone(), config.destination_chains.clone());
     let listener = TcpListener::bind(config.listen_addr).await?;
 
     info!(

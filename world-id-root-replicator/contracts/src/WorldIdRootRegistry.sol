@@ -7,6 +7,7 @@ contract WorldIdRootRegistry {
     error ConflictingRoot(uint64 sourceBlockNumber, bytes32 existingRoot, bytes32 newRoot);
     error InvalidVerifier(address verifierAddress);
     error InvalidProgramVKey(bytes32 programVKey);
+    error StaleSourceBlock(uint64 sourceBlockNumber, uint64 latestSourceBlock);
 
     mapping(uint64 => bytes32) public roots;
     bytes32 public latestRoot;
@@ -35,24 +36,23 @@ contract WorldIdRootRegistry {
     }
 
     function submitRoot(bytes calldata proofBytes, bytes calldata publicValues) external {
-        ISP1Verifier(verifier).verifyProof(programVKey, publicValues, proofBytes);
-
         (uint64 sourceBlockNumber, bytes32 root) = abi.decode(publicValues, (uint64, bytes32));
+
+        if (sourceBlockNumber <= latestSourceBlock) {
+            revert StaleSourceBlock(sourceBlockNumber, latestSourceBlock);
+        }
+
+        ISP1Verifier(verifier).verifyProof(programVKey, publicValues, proofBytes);
 
         bytes32 existingRoot = roots[sourceBlockNumber];
         if (existingRoot != bytes32(0) && existingRoot != root) {
             revert ConflictingRoot(sourceBlockNumber, existingRoot, root);
         }
 
-        if (existingRoot == bytes32(0)) {
-            roots[sourceBlockNumber] = root;
+        roots[sourceBlockNumber] = root;
+        latestSourceBlock = sourceBlockNumber;
+        latestRoot = root;
 
-            if (sourceBlockNumber >= latestSourceBlock) {
-                latestSourceBlock = sourceBlockNumber;
-                latestRoot = root;
-            }
-
-            emit RootReplicated(sourceBlockNumber, root);
-        }
+        emit RootReplicated(sourceBlockNumber, root);
     }
 }
