@@ -1,6 +1,7 @@
 use crate::config::DestinationChainConfig;
 use crate::db;
 use crate::jobs::types::ObservedRoot;
+use crate::world_id::SEPOLIA_IDENTITY_MANAGER;
 use alloy_primitives::B256;
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types_eth::{Filter, Log};
@@ -27,15 +28,11 @@ pub trait RootWatcher: Send + Sync {
 
 pub struct WorldIdWatcher {
     rpc_url: String,
-    identity_manager: alloy_primitives::Address,
 }
 
 impl WorldIdWatcher {
-    pub fn new(rpc_url: String, identity_manager: alloy_primitives::Address) -> Self {
-        Self {
-            rpc_url,
-            identity_manager,
-        }
+    pub fn new(rpc_url: String) -> Self {
+        Self { rpc_url }
     }
 }
 
@@ -66,7 +63,7 @@ impl RootWatcher for WorldIdWatcher {
         }
 
         let filter = Filter::new()
-            .address(self.identity_manager)
+            .address(SEPOLIA_IDENTITY_MANAGER)
             .event_signature(TreeChanged::SIGNATURE_HASH)
             .from_block(from_block)
             .to_block(latest_block);

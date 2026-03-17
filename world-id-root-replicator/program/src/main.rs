@@ -4,11 +4,14 @@
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
-use alloy_primitives::FixedBytes;
+use alloy_primitives::{address, uint, Address, FixedBytes, U256};
 use alloy_sol_types::SolValue;
 use bankai_types::ProofBundle;
 use bankai_verify::verify_batch_proof;
 use serde::{Deserialize, Serialize};
+
+const SEPOLIA_IDENTITY_MANAGER: Address = address!("b2EaD588f14e69266d1b87936b75325181377076");
+const LATEST_ROOT_SLOT: U256 = uint!(0x12e_U256);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PublicValues {
@@ -31,6 +34,14 @@ pub fn main() {
         storage_slot.slots.len(),
         1,
         "expected exactly one verified storage slot value"
+    );
+    assert_eq!(
+        storage_slot.address, SEPOLIA_IDENTITY_MANAGER,
+        "expected proof for the Sepolia World ID Identity Manager"
+    );
+    assert_eq!(
+        storage_slot.slots[0].0, LATEST_ROOT_SLOT,
+        "expected proof for the World ID latest-root storage slot"
     );
 
     let public_values = PublicValues {

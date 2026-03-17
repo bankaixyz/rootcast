@@ -1,5 +1,5 @@
 use crate::config::BankaiNetwork;
-use alloy_primitives::{Address, U256};
+use crate::world_id::{LATEST_ROOT_SLOT, SEPOLIA_IDENTITY_MANAGER};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bankai_sdk::{Bankai, HashingFunction};
@@ -12,21 +12,12 @@ pub trait ProofBundleClient: Send + Sync {
 
 pub struct BankaiProofBundleClient {
     bankai: Bankai,
-    identity_manager: Address,
-    root_slot: U256,
 }
 
 impl BankaiProofBundleClient {
-    pub fn new(
-        network: BankaiNetwork,
-        execution_rpc: String,
-        identity_manager: Address,
-        root_slot: U256,
-    ) -> Self {
+    pub fn new(network: BankaiNetwork, execution_rpc: String) -> Self {
         Self {
             bankai: Bankai::new(network.into_sdk(), Some(execution_rpc), None, None),
-            identity_manager,
-            root_slot,
         }
     }
 }
@@ -41,8 +32,8 @@ impl ProofBundleClient for BankaiProofBundleClient {
             .context("initialize Bankai proof batch")?
             .ethereum_storage_slot(
                 source_block_number,
-                self.identity_manager,
-                vec![self.root_slot],
+                SEPOLIA_IDENTITY_MANAGER,
+                vec![LATEST_ROOT_SLOT],
             )
             .execute()
             .await

@@ -1,4 +1,4 @@
-use alloy_primitives::{Address, U256};
+use alloy_primitives::Address;
 use anyhow::{Context, Result};
 use bankai_sdk::Network;
 use std::env;
@@ -11,8 +11,6 @@ pub struct Config {
     pub bankai_network: BankaiNetwork,
     pub sp1_prover: String,
     pub execution_rpc: String,
-    pub world_id_identity_manager: Address,
-    pub world_id_root_slot: U256,
     pub base_sepolia: DestinationChainConfig,
 }
 
@@ -50,8 +48,6 @@ impl Config {
             bankai_network: required("BANKAI_NETWORK")?.parse()?,
             sp1_prover: required("SP1_PROVER")?,
             execution_rpc: required("EXECUTION_RPC")?,
-            world_id_identity_manager: parse_address("WORLD_ID_IDENTITY_MANAGER")?,
-            world_id_root_slot: parse_u256("WORLD_ID_ROOT_SLOT")?,
             base_sepolia: DestinationChainConfig {
                 name: "base-sepolia",
                 chain_id: 84_532,
@@ -71,12 +67,6 @@ fn parse_address(name: &str) -> Result<Address> {
     required(name)?
         .parse()
         .with_context(|| format!("{name} must be a valid address"))
-}
-
-fn parse_u256(name: &str) -> Result<U256> {
-    let raw = required(name)?;
-    let trimmed = raw.trim_start_matches("0x");
-    U256::from_str_radix(trimmed, 16).with_context(|| format!("{name} must be a hex uint256"))
 }
 
 impl std::str::FromStr for BankaiNetwork {

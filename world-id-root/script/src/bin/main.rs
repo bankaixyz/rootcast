@@ -19,6 +19,8 @@ use sp1_sdk::{include_elf, Prover, SP1Stdin};
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
 const WORLD_ID_ELF: &[u8] = include_elf!("world-id");
+const SEPOLIA_IDENTITY_MANAGER: &str = "0xb2EaD588f14e69266d1b87936b75325181377076";
+const LATEST_ROOT_SLOT: &str = "0x000000000000000000000000000000000000000000000000000000000000012e";
 
 /// The arguments for the command.
 #[derive(Parser, Debug)]
@@ -63,11 +65,9 @@ async fn main() {
 
     println!("got latest block: {}", latest_block.height);
 
-    let contract = Address::from_hex("0xb2EaD588f14e69266d1b87936b75325181377076").unwrap();
+    let contract = Address::from_hex(SEPOLIA_IDENTITY_MANAGER).unwrap();
 
-    let key_bytes: FixedBytes<32> =
-        FixedBytes::from_hex("0x000000000000000000000000000000000000000000000000000000000000012e")
-            .unwrap();
+    let key_bytes: FixedBytes<32> = FixedBytes::from_hex(LATEST_ROOT_SLOT).unwrap();
     let mpt_key = U256::from_be_bytes(key_bytes.into());
 
     let bundle = bankai

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -6,7 +7,7 @@ use world_id_root_replicator_backend::{api, config::Config, db, jobs::runner::Ru
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv::dotenv().ok();
+    load_env();
     setup_tracing();
 
     let config = Config::from_env()?;
@@ -31,6 +32,15 @@ async fn main() -> Result<()> {
 
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn load_env() {
+    if dotenv::dotenv().is_ok() {
+        return;
+    }
+
+    let workspace_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
+    dotenv::from_path(&workspace_env).ok();
 }
 
 fn setup_tracing() {

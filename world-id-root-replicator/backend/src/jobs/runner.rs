@@ -29,10 +29,7 @@ pub struct Runner {
 
 impl Runner {
     pub fn from_config(config: Config, pool: SqlitePool) -> Result<Self> {
-        let watcher = Arc::new(WorldIdWatcher::new(
-            config.execution_rpc.clone(),
-            config.world_id_identity_manager,
-        ));
+        let watcher = Arc::new(WorldIdWatcher::new(config.execution_rpc.clone()));
         let finality_client = Arc::new(BankaiFinalityClient::new(
             config.bankai_network,
             config.execution_rpc.clone(),
@@ -40,8 +37,6 @@ impl Runner {
         let bundle_client = Arc::new(BankaiProofBundleClient::new(
             config.bankai_network,
             config.execution_rpc.clone(),
-            config.world_id_identity_manager,
-            config.world_id_root_slot,
         ));
         let proof_service = Arc::new(Sp1ProofService::new(PathBuf::from("artifacts/proofs")));
         let submission_client = Arc::new(BaseSepoliaSubmitter::new(
