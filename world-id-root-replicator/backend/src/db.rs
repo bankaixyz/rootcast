@@ -35,12 +35,6 @@ pub struct ActiveJobRow {
     pub proof_artifact_ref: Option<String>,
     pub job_error_message: Option<String>,
     pub job_retry_count: i64,
-    pub submission_id: i64,
-    pub submission_state: String,
-    pub submission_tx_hash: Option<String>,
-    pub submission_error_message: Option<String>,
-    pub submission_retry_count: i64,
-    pub registry_address: String,
 }
 
 #[derive(Clone, Debug)]
@@ -55,12 +49,6 @@ pub struct ActiveJob {
     pub proof_artifact_ref: Option<String>,
     pub job_error_message: Option<String>,
     pub job_retry_count: u32,
-    pub submission_id: i64,
-    pub submission_state: ChainSubmissionState,
-    pub submission_tx_hash: Option<String>,
-    pub submission_error_message: Option<String>,
-    pub submission_retry_count: u32,
-    pub registry_address: String,
 }
 
 impl TryFrom<ActiveJobRow> for ActiveJob {
@@ -80,13 +68,48 @@ impl TryFrom<ActiveJobRow> for ActiveJob {
             job_error_message: row.job_error_message,
             job_retry_count: u32::try_from(row.job_retry_count)
                 .context("job_retry_count does not fit in u32")?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, FromRow)]
+pub struct ChainSubmissionRow {
+    pub submission_id: i64,
+    pub chain_name: String,
+    pub chain_id: i64,
+    pub registry_address: String,
+    pub submission_state: String,
+    pub submission_tx_hash: Option<String>,
+    pub submission_error_message: Option<String>,
+    pub submission_retry_count: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChainSubmission {
+    pub submission_id: i64,
+    pub chain_name: String,
+    pub chain_id: u64,
+    pub registry_address: String,
+    pub submission_state: ChainSubmissionState,
+    pub submission_tx_hash: Option<String>,
+    pub submission_error_message: Option<String>,
+    pub submission_retry_count: u32,
+}
+
+impl TryFrom<ChainSubmissionRow> for ChainSubmission {
+    type Error = anyhow::Error;
+
+    fn try_from(row: ChainSubmissionRow) -> Result<Self> {
+        Ok(Self {
             submission_id: row.submission_id,
+            chain_name: row.chain_name,
+            chain_id: u64::try_from(row.chain_id).context("chain_id does not fit in u64")?,
+            registry_address: row.registry_address,
             submission_state: row.submission_state.parse()?,
             submission_tx_hash: row.submission_tx_hash,
             submission_error_message: row.submission_error_message,
             submission_retry_count: u32::try_from(row.submission_retry_count)
                 .context("submission_retry_count does not fit in u32")?,
-            registry_address: row.registry_address,
         })
     }
 }
@@ -117,8 +140,12 @@ pub async fn latest_observed_source_block(pool: &SqlitePool) -> Result<Option<u6
 pub async fn record_observed_root(
     pool: &SqlitePool,
     root: &ObservedRoot,
-    destination: &DestinationChainConfig,
+    destinations: &[DestinationChainConfig],
 ) -> Result<RecordObservedRootResult> {
+    if destinations.is_empty() {
+        anyhow::bail!("at least one destination chain is required");
+    }
+
     let mut tx = pool.begin().await?;
 
     let existing = sqlx::query_scalar::<_, i64>(
@@ -223,24 +250,26 @@ pub async fn record_observed_root(
     .fetch_one(&mut *tx)
     .await?;
 
-    sqlx::query(
-        r#"
-        INSERT OR IGNORE INTO chain_submissions (
-            replication_job_id,
-            chain_name,
-            chain_id,
-            registry_address,
-            state
-        ) VALUES (?, ?, ?, ?, ?)
-        "#,
-    )
-    .bind(job_id)
-    .bind(destination.name)
-    .bind(to_i64(destination.chain_id)?)
-    .bind(destination.registry_address.to_string())
-    .bind(ChainSubmissionState::Pending.as_db_str())
-    .execute(&mut *tx)
-    .await?;
+    for destination in destinations {
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO chain_submissions (
+                replication_job_id,
+                chain_name,
+                chain_id,
+                registry_address,
+                state
+            ) VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(job_id)
+        .bind(destination.name())
+        .bind(to_i64(destination.chain_id())?)
+        .bind(destination.registry_address.to_string())
+        .bind(ChainSubmissionState::Pending.as_db_str())
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
     Ok(RecordObservedRootResult {
@@ -278,7 +307,7 @@ pub async fn repair_inflight_jobs(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn next_active_job(pool: &SqlitePool, chain_name: &str) -> Result<Option<ActiveJob>> {
+pub async fn next_active_job(pool: &SqlitePool) -> Result<Option<ActiveJob>> {
     let row = sqlx::query_as::<_, ActiveJobRow>(
         r#"
         SELECT
@@ -291,23 +320,14 @@ pub async fn next_active_job(pool: &SqlitePool, chain_name: &str) -> Result<Opti
             j.proof_requested_at,
             j.proof_artifact_ref,
             j.error_message AS job_error_message,
-            j.retry_count AS job_retry_count,
-            s.id AS submission_id,
-            s.state AS submission_state,
-            s.tx_hash AS submission_tx_hash,
-            s.error_message AS submission_error_message,
-            s.retry_count AS submission_retry_count,
-            s.registry_address
+            j.retry_count AS job_retry_count
         FROM replication_jobs j
         INNER JOIN observed_roots o ON o.id = j.observed_root_id
-        INNER JOIN chain_submissions s ON s.replication_job_id = j.id
-        WHERE s.chain_name = ?
-          AND j.state IN (?, ?, ?, ?)
+        WHERE j.state IN (?, ?, ?, ?)
         ORDER BY j.id
         LIMIT 1
         "#,
     )
-    .bind(chain_name)
     .bind(ReplicationJobState::WaitingFinality.as_db_str())
     .bind(ReplicationJobState::ReadyToProve.as_db_str())
     .bind(ReplicationJobState::ProofReady.as_db_str())
@@ -316,6 +336,32 @@ pub async fn next_active_job(pool: &SqlitePool, chain_name: &str) -> Result<Opti
     .await?;
 
     row.map(ActiveJob::try_from).transpose()
+}
+
+pub async fn job_submissions(pool: &SqlitePool, job_id: i64) -> Result<Vec<ChainSubmission>> {
+    let rows = sqlx::query_as::<_, ChainSubmissionRow>(
+        r#"
+        SELECT
+            id AS submission_id,
+            chain_name,
+            chain_id,
+            registry_address,
+            state AS submission_state,
+            tx_hash AS submission_tx_hash,
+            error_message AS submission_error_message,
+            retry_count AS submission_retry_count
+        FROM chain_submissions
+        WHERE replication_job_id = ?
+        ORDER BY id
+        "#,
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(ChainSubmission::try_from)
+        .collect::<Result<Vec<_>>>()
 }
 
 pub async fn mark_observed_root_finalized(pool: &SqlitePool, observed_root_id: i64) -> Result<()> {

@@ -5,8 +5,7 @@ import {ISP1Verifier} from "../src/ISP1Verifier.sol";
 import {WorldIdRootRegistry} from "../src/WorldIdRootRegistry.sol";
 
 contract WorldIdRootRegistryTest {
-    bytes32 internal constant PROGRAM_VKEY =
-        0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef;
+    bytes32 internal constant PROGRAM_VKEY = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef;
 
     WorldIdRootRegistry internal registry;
     MockVerifier internal verifier;
@@ -88,10 +87,30 @@ contract WorldIdRootRegistryTest {
             address(registry).call(abi.encodeCall(registry.submitRoot, (secondProofBytes, secondPublicValues)));
 
         require(!ok, "expected conflicting root revert");
-        require(
-            _selector(revertData) == WorldIdRootRegistry.ConflictingRoot.selector,
-            "wrong revert selector"
-        );
+        require(_selector(revertData) == WorldIdRootRegistry.ConflictingRoot.selector, "wrong revert selector");
+    }
+
+    function test_submitRootDoesNotRegressLatestRootForOlderSourceBlocks() public {
+        bytes memory newerProofBytes = hex"03";
+        bytes memory newerPublicValues = abi.encode(uint64(9), bytes32(uint256(9)));
+        verifier.expectVerify(PROGRAM_VKEY, newerPublicValues, newerProofBytes);
+        registry.submitRoot(newerProofBytes, newerPublicValues);
+
+        bytes memory olderProofBytes = hex"04";
+        bytes memory olderPublicValues = abi.encode(uint64(8), bytes32(uint256(8)));
+        verifier.expectVerify(PROGRAM_VKEY, olderPublicValues, olderProofBytes);
+        registry.submitRoot(olderProofBytes, olderPublicValues);
+
+        require(registry.roots(uint64(9)) == bytes32(uint256(9)), "newer root missing");
+        require(registry.roots(uint64(8)) == bytes32(uint256(8)), "older root missing");
+        require(registry.latestSourceBlock() == uint64(9), "latestSourceBlock regressed");
+        require(registry.latestRoot() == bytes32(uint256(9)), "latestRoot regressed");
+
+        verifier.expectVerify(PROGRAM_VKEY, olderPublicValues, olderProofBytes);
+        registry.submitRoot(olderProofBytes, olderPublicValues);
+
+        require(registry.latestSourceBlock() == uint64(9), "latestSourceBlock changed");
+        require(registry.latestRoot() == bytes32(uint256(9)), "latestRoot changed");
     }
 
     function _selector(bytes memory revertData) internal pure returns (bytes4 selector) {
@@ -103,9 +122,7 @@ contract WorldIdRootRegistryTest {
 }
 
 contract RelayCaller {
-    function submit(WorldIdRootRegistry registry, bytes memory proofBytes, bytes memory publicValues)
-        external
-    {
+    function submit(WorldIdRootRegistry registry, bytes memory proofBytes, bytes memory publicValues) external {
         registry.submitRoot(proofBytes, publicValues);
     }
 }
@@ -121,29 +138,21 @@ contract MockVerifier is ISP1Verifier {
     bytes internal expectedProofBytes;
     bool internal rejectProof;
 
-    function expectVerify(bytes32 programVKey, bytes memory publicValues, bytes memory proofBytes)
-        external
-    {
+    function expectVerify(bytes32 programVKey, bytes memory publicValues, bytes memory proofBytes) external {
         expectedProgramVKey = programVKey;
         expectedPublicValues = publicValues;
         expectedProofBytes = proofBytes;
         rejectProof = false;
     }
 
-    function rejectVerify(bytes32 programVKey, bytes memory publicValues, bytes memory proofBytes)
-        external
-    {
+    function rejectVerify(bytes32 programVKey, bytes memory publicValues, bytes memory proofBytes) external {
         expectedProgramVKey = programVKey;
         expectedPublicValues = publicValues;
         expectedProofBytes = proofBytes;
         rejectProof = true;
     }
 
-    function verifyProof(
-        bytes32 programVKey,
-        bytes calldata publicValues,
-        bytes calldata proofBytes
-    ) external view {
+    function verifyProof(bytes32 programVKey, bytes calldata publicValues, bytes calldata proofBytes) external view {
         if (programVKey != expectedProgramVKey) {
             revert UnexpectedProgramVKey(programVKey, expectedProgramVKey);
         }

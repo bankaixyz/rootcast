@@ -32,18 +32,32 @@ pub enum ChainSubmissionState {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum DestinationChain {
     BaseSepolia,
+    OpSepolia,
+    ArbitrumSepolia,
 }
 
 impl DestinationChain {
     pub const fn chain_id(self) -> u64 {
         match self {
             Self::BaseSepolia => 84_532,
+            Self::OpSepolia => 11_155_420,
+            Self::ArbitrumSepolia => 421_614,
         }
     }
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::BaseSepolia => "base-sepolia",
+            Self::OpSepolia => "op-sepolia",
+            Self::ArbitrumSepolia => "arbitrum-sepolia",
+        }
+    }
+
+    pub const fn env_prefix(self) -> &'static str {
+        match self {
+            Self::BaseSepolia => "BASE_SEPOLIA",
+            Self::OpSepolia => "OP_SEPOLIA",
+            Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
         }
     }
 }

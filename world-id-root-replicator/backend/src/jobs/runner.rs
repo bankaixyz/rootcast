@@ -1,13 +1,16 @@
 use crate::bankai::finality::{BankaiFinalityClient, FinalityClient};
 use crate::bankai::proof_bundle::{BankaiProofBundleClient, ProofBundleClient};
-use crate::chains::base_sepolia::{BaseSepoliaSubmitter, SubmissionCheck, SubmissionClient};
-use crate::config::Config;
-use crate::db::{self, ActiveJob};
+use crate::chains::{EvmSubmitter, SubmissionCheck, SubmissionClient};
+use crate::config::{Config, DestinationChainConfig};
+use crate::db::{self, ActiveJob, ChainSubmission};
 use crate::jobs::types::{ChainSubmissionState, ReplicationJobState};
-use crate::proving::sp1::{root_hex_to_bytes, ProofService, PublicValues, Sp1ProofService};
+use crate::proving::sp1::{
+    root_hex_to_bytes, root_to_hex, ProofService, PublicValues, Sp1ProofService,
+};
 use crate::world_id::watcher::{RootWatcher, WorldIdWatcher};
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
@@ -18,14 +21,12 @@ const MIN_PROOF_REQUEST_AGE_SECS: i64 = 50 * 60;
 
 pub struct Runner {
     pool: SqlitePool,
-    chain_name: &'static str,
-    destination_registry_address: alloy_primitives::Address,
-    destination: crate::config::DestinationChainConfig,
+    destinations: Vec<DestinationChainConfig>,
+    submission_clients: HashMap<&'static str, Arc<dyn SubmissionClient>>,
     watcher: Arc<dyn RootWatcher>,
     finality_client: Arc<dyn FinalityClient>,
     bundle_client: Arc<dyn ProofBundleClient>,
     proof_service: Arc<dyn ProofService>,
-    submission_client: Arc<dyn SubmissionClient>,
 }
 
 impl Runner {
@@ -40,45 +41,47 @@ impl Runner {
             config.execution_rpc.clone(),
         ));
         let proof_service = Arc::new(Sp1ProofService::new(PathBuf::from("artifacts/proofs")));
-        let submission_client = Arc::new(BaseSepoliaSubmitter::new(
-            config.base_sepolia.rpc_url.clone(),
-            config.base_sepolia.private_key.clone(),
-            config.base_sepolia.chain_id,
-        ));
+        let destinations = config.destination_chains;
+        let submission_clients = destinations
+            .iter()
+            .cloned()
+            .map(|destination| {
+                (
+                    destination.name(),
+                    Arc::new(EvmSubmitter::new(destination)) as Arc<dyn SubmissionClient>,
+                )
+            })
+            .collect();
 
         Ok(Self {
             pool,
-            chain_name: config.base_sepolia.name,
-            destination_registry_address: config.base_sepolia.registry_address,
-            destination: config.base_sepolia,
+            destinations,
+            submission_clients,
             watcher,
             finality_client,
             bundle_client,
             proof_service,
-            submission_client,
         })
     }
 
     #[cfg(test)]
     fn new_for_tests(
         pool: SqlitePool,
-        destination: crate::config::DestinationChainConfig,
+        destinations: Vec<DestinationChainConfig>,
+        submission_clients: HashMap<&'static str, Arc<dyn SubmissionClient>>,
         watcher: Arc<dyn RootWatcher>,
         finality_client: Arc<dyn FinalityClient>,
         bundle_client: Arc<dyn ProofBundleClient>,
         proof_service: Arc<dyn ProofService>,
-        submission_client: Arc<dyn SubmissionClient>,
     ) -> Self {
         Self {
             pool,
-            chain_name: destination.name,
-            destination_registry_address: destination.registry_address,
-            destination,
+            destinations,
+            submission_clients,
             watcher,
             finality_client,
             bundle_client,
             proof_service,
-            submission_client,
         }
     }
 
@@ -91,13 +94,13 @@ impl Runner {
 
     pub async fn advance_once(&self) -> Result<()> {
         self.watcher
-            .poll_once(&self.pool, &self.destination)
+            .poll_once(&self.pool, &self.destinations)
             .await
             .context("poll World ID watcher")?;
 
         db::repair_inflight_jobs(&self.pool).await?;
 
-        let Some(job) = db::next_active_job(&self.pool, self.chain_name).await? else {
+        let Some(job) = db::next_active_job(&self.pool).await? else {
             return Ok(());
         };
 
@@ -109,7 +112,7 @@ impl Runner {
             ReplicationJobState::WaitingFinality => self.advance_waiting_finality(job).await,
             ReplicationJobState::ReadyToProve => self.advance_ready_to_prove(job).await,
             ReplicationJobState::ProofReady | ReplicationJobState::Submitting => {
-                self.advance_submission(job).await
+                self.advance_submissions(job).await
             }
             ReplicationJobState::ProofInProgress
             | ReplicationJobState::Completed
@@ -138,14 +141,13 @@ impl Runner {
             }
         };
 
-        let ready = finalized_height >= job.source_block_number;
         if finalized_height < job.source_block_number {
             info!(
                 job_id = job.job_id,
                 root = %job.root_hex,
                 bankai_finalized_height = finalized_height,
                 required_source_block = job.source_block_number,
-                decision = if ready { "ready_to_prove" } else { "wait" },
+                decision = "wait",
                 "checked Bankai finality"
             );
             return Ok(());
@@ -231,112 +233,230 @@ impl Runner {
         Ok(())
     }
 
-    async fn advance_submission(&self, job: ActiveJob) -> Result<()> {
-        match job.submission_state {
-            ChainSubmissionState::Pending => {
-                let Some(artifact_path) = job.proof_artifact_ref.as_deref() else {
-                    db::mark_job_retryable(
-                        &self.pool,
-                        job.job_id,
-                        ReplicationJobState::ReadyToProve,
-                        "missing proof artifact ref for submission",
-                    )
-                    .await?;
-                    return Ok(());
-                };
+    async fn advance_submissions(&self, job: ActiveJob) -> Result<()> {
+        let submissions = db::job_submissions(&self.pool, job.job_id).await?;
+        if submissions.is_empty() {
+            db::mark_job_failed(&self.pool, job.job_id, "no chain submissions were created")
+                .await?;
+            return Ok(());
+        }
 
-                let proof_artifact = self.proof_service.load(artifact_path).await?;
-                if proof_artifact.decoded_public_values.source_block_number
-                    != job.source_block_number
-                    || crate::proving::sp1::root_to_hex(proof_artifact.decoded_public_values.root)
-                        != job.root_hex
-                {
-                    db::mark_job_failed(
-                        &self.pool,
-                        job.job_id,
-                        "proof artifact public values do not match the observed root",
-                    )
-                    .await?;
-                    db::mark_submission_failed(
-                        &self.pool,
-                        job.submission_id,
-                        "proof artifact public values do not match the observed root",
-                    )
-                    .await?;
-                    return Ok(());
-                }
+        let Some(artifact_path) = job.proof_artifact_ref.as_deref() else {
+            db::mark_job_retryable(
+                &self.pool,
+                job.job_id,
+                ReplicationJobState::ReadyToProve,
+                "missing proof artifact ref for submission",
+            )
+            .await?;
+            return Ok(());
+        };
 
-                let tx_hash = match self
-                    .submission_client
-                    .submit_artifact(self.destination_registry_address, artifact_path)
-                    .await
-                {
-                    Ok(tx_hash) => tx_hash,
-                    Err(error) => {
-                        db::mark_job_retryable(
-                            &self.pool,
-                            job.job_id,
-                            ReplicationJobState::ProofReady,
-                            &error.to_string(),
-                        )
-                        .await?;
-                        db::mark_submission_retryable(
-                            &self.pool,
-                            job.submission_id,
-                            ChainSubmissionState::Pending,
-                            &error.to_string(),
-                        )
-                        .await?;
+        if submissions
+            .iter()
+            .any(|submission| submission.submission_state == ChainSubmissionState::Pending)
+        {
+            match self.proof_service.load(artifact_path).await {
+                Ok(proof_artifact) => {
+                    if proof_artifact.decoded_public_values.source_block_number
+                        != job.source_block_number
+                        || root_to_hex(proof_artifact.decoded_public_values.root) != job.root_hex
+                    {
+                        let message = "proof artifact public values do not match the observed root";
+                        self.mark_unfinished_submissions_failed(&submissions, message)
+                            .await?;
+                        db::mark_job_failed(&self.pool, job.job_id, message).await?;
                         return Ok(());
                     }
-                };
-
-                db::mark_submission_submitting(&self.pool, job.submission_id, &tx_hash).await?;
-                db::update_job_state(&self.pool, job.job_id, ReplicationJobState::Submitting)
-                    .await?;
-                info!(job_id = job.job_id, %tx_hash, "submitted Base Sepolia proof");
-                Ok(())
-            }
-            ChainSubmissionState::Submitting => {
-                let Some(tx_hash) = job.submission_tx_hash.as_deref() else {
-                    db::mark_job_retryable(
-                        &self.pool,
-                        job.job_id,
-                        ReplicationJobState::ProofReady,
-                        "submission entered submitting state without a transaction hash",
-                    )
-                    .await?;
-                    db::mark_submission_retryable(
-                        &self.pool,
-                        job.submission_id,
-                        ChainSubmissionState::Pending,
-                        "submission entered submitting state without a transaction hash",
-                    )
-                    .await?;
+                }
+                Err(error) => {
+                    db::mark_job_failed(&self.pool, job.job_id, &error.to_string()).await?;
+                    self.mark_unfinished_submissions_failed(&submissions, &error.to_string())
+                        .await?;
                     return Ok(());
-                };
-
-                match self.submission_client.check_submission(tx_hash).await {
-                    Ok(SubmissionCheck::Pending) => Ok(()),
-                    Ok(SubmissionCheck::Confirmed) => {
-                        db::mark_submission_confirmed(&self.pool, job.submission_id, tx_hash)
-                            .await?;
-                        db::mark_job_completed(&self.pool, job.job_id).await?;
-                        Ok(())
-                    }
-                    Ok(SubmissionCheck::Failed(message)) => {
-                        db::mark_submission_failed(&self.pool, job.submission_id, &message).await?;
-                        db::mark_job_failed(&self.pool, job.job_id, &message).await?;
-                        Ok(())
-                    }
-                    Err(error) => {
-                        warn!(?error, job_id = job.job_id, "failed to confirm submission");
-                        Ok(())
-                    }
                 }
             }
-            ChainSubmissionState::Confirmed | ChainSubmissionState::Failed => Ok(()),
         }
+
+        for submission in submissions {
+            match submission.submission_state {
+                ChainSubmissionState::Pending => {
+                    self.advance_pending_submission(job.job_id, artifact_path, &submission)
+                        .await?;
+                }
+                ChainSubmissionState::Submitting => {
+                    self.advance_submitting_submission(job.job_id, &submission)
+                        .await?;
+                }
+                ChainSubmissionState::Confirmed | ChainSubmissionState::Failed => {}
+            }
+        }
+
+        self.reconcile_submission_job(job.job_id).await
+    }
+
+    async fn advance_pending_submission(
+        &self,
+        job_id: i64,
+        artifact_path: &str,
+        submission: &ChainSubmission,
+    ) -> Result<()> {
+        let client = self.submission_client(&submission.chain_name)?;
+        let registry_address = submission
+            .registry_address
+            .parse()
+            .with_context(|| format!("parse {} registry address", submission.chain_name))?;
+
+        match client
+            .submit_artifact(registry_address, artifact_path)
+            .await
+        {
+            Ok(tx_hash) => {
+                db::mark_submission_submitting(&self.pool, submission.submission_id, &tx_hash)
+                    .await?;
+                info!(
+                    job_id,
+                    chain = %submission.chain_name,
+                    %tx_hash,
+                    "submitted proof"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    ?error,
+                    job_id,
+                    chain = %submission.chain_name,
+                    "failed to submit proof"
+                );
+                db::mark_submission_retryable(
+                    &self.pool,
+                    submission.submission_id,
+                    ChainSubmissionState::Pending,
+                    &error.to_string(),
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn advance_submitting_submission(
+        &self,
+        job_id: i64,
+        submission: &ChainSubmission,
+    ) -> Result<()> {
+        let Some(tx_hash) = submission.submission_tx_hash.as_deref() else {
+            db::mark_submission_retryable(
+                &self.pool,
+                submission.submission_id,
+                ChainSubmissionState::Pending,
+                "submission entered submitting state without a transaction hash",
+            )
+            .await?;
+            return Ok(());
+        };
+
+        let client = self.submission_client(&submission.chain_name)?;
+        match client.check_submission(tx_hash).await {
+            Ok(SubmissionCheck::Pending) => Ok(()),
+            Ok(SubmissionCheck::Confirmed) => {
+                db::mark_submission_confirmed(&self.pool, submission.submission_id, tx_hash)
+                    .await?;
+                Ok(())
+            }
+            Ok(SubmissionCheck::Failed(message)) => {
+                warn!(
+                    job_id,
+                    chain = %submission.chain_name,
+                    %message,
+                    "submission failed"
+                );
+                db::mark_submission_failed(&self.pool, submission.submission_id, &message).await?;
+                Ok(())
+            }
+            Err(error) => {
+                warn!(
+                    ?error,
+                    job_id,
+                    chain = %submission.chain_name,
+                    "failed to confirm submission"
+                );
+                db::mark_submission_retryable(
+                    &self.pool,
+                    submission.submission_id,
+                    ChainSubmissionState::Submitting,
+                    &error.to_string(),
+                )
+                .await?;
+                Ok(())
+            }
+        }
+    }
+
+    async fn reconcile_submission_job(&self, job_id: i64) -> Result<()> {
+        let submissions = db::job_submissions(&self.pool, job_id).await?;
+        if submissions.is_empty() {
+            db::mark_job_failed(&self.pool, job_id, "no chain submissions were created").await?;
+            return Ok(());
+        }
+
+        let any_active = submissions.iter().any(|submission| {
+            matches!(
+                submission.submission_state,
+                ChainSubmissionState::Pending | ChainSubmissionState::Submitting
+            )
+        });
+        if any_active {
+            db::update_job_state(&self.pool, job_id, ReplicationJobState::Submitting).await?;
+            return Ok(());
+        }
+
+        let all_confirmed = submissions
+            .iter()
+            .all(|submission| submission.submission_state == ChainSubmissionState::Confirmed);
+        if all_confirmed {
+            db::mark_job_completed(&self.pool, job_id).await?;
+            return Ok(());
+        }
+
+        let failed_chains = submissions
+            .iter()
+            .filter(|submission| submission.submission_state == ChainSubmissionState::Failed)
+            .map(|submission| submission.chain_name.clone())
+            .collect::<Vec<_>>();
+
+        db::mark_job_failed(
+            &self.pool,
+            job_id,
+            &format!(
+                "one or more chain submissions failed: {}",
+                failed_chains.join(", ")
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_unfinished_submissions_failed(
+        &self,
+        submissions: &[ChainSubmission],
+        message: &str,
+    ) -> Result<()> {
+        for submission in submissions {
+            if submission.submission_state != ChainSubmissionState::Confirmed {
+                db::mark_submission_failed(&self.pool, submission.submission_id, message).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn submission_client(&self, chain_name: &str) -> Result<Arc<dyn SubmissionClient>> {
+        self.submission_clients
+            .get(chain_name)
+            .cloned()
+            .with_context(|| format!("missing submission client for {chain_name}"))
     }
 }
 
@@ -349,8 +469,7 @@ fn is_terminal_proving_error(error: &anyhow::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::DestinationChainConfig;
-    use crate::jobs::types::ObservedRoot;
+    use crate::jobs::types::{DestinationChain, ObservedRoot};
     use alloy_primitives::Address;
     use anyhow::Result;
     use async_trait::async_trait;
@@ -368,7 +487,7 @@ mod tests {
         async fn poll_once(
             &self,
             _pool: &SqlitePool,
-            _destination: &DestinationChainConfig,
+            _destinations: &[DestinationChainConfig],
         ) -> Result<()> {
             Ok(())
         }
@@ -439,6 +558,8 @@ mod tests {
 
     struct FakeSubmissionClient {
         submitted: Mutex<Vec<String>>,
+        submit_error: Option<String>,
+        check_results: Mutex<Vec<Result<SubmissionCheck>>>,
     }
 
     #[async_trait]
@@ -448,6 +569,10 @@ mod tests {
             _registry_address: Address,
             artifact_path: &str,
         ) -> Result<String> {
+            if let Some(error) = &self.submit_error {
+                anyhow::bail!(error.clone());
+            }
+
             self.submitted
                 .lock()
                 .unwrap()
@@ -456,63 +581,53 @@ mod tests {
         }
 
         async fn check_submission(&self, _tx_hash: &str) -> Result<SubmissionCheck> {
-            Ok(SubmissionCheck::Confirmed)
+            let mut results = self.check_results.lock().unwrap();
+            if results.is_empty() {
+                return Ok(SubmissionCheck::Confirmed);
+            }
+
+            results.remove(0)
         }
     }
 
     #[tokio::test]
     async fn runner_waits_for_bankai_finality() {
         let pool = test_pool().await;
-        let destination = destination();
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([5u8; 32])),
-                source_block_number: 100,
-                source_tx_hash: "0xabc".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [5u8; 32], 100, "0xabc").await;
 
         let runner = Runner::new_for_tests(
             pool.clone(),
-            destination,
+            destinations.clone(),
+            fake_clients_for(&destinations),
             Arc::new(NoopWatcher),
             Arc::new(StaticFinalityClient { height: 99 }),
             Arc::new(StaticBundleClient),
             Arc::new(FakeProofService {
                 prove_calls: AtomicU64::new(0),
             }),
-            Arc::new(FakeSubmissionClient {
-                submitted: Mutex::new(Vec::new()),
-            }),
         );
 
         runner.advance_once().await.unwrap();
 
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
         assert_eq!(job.job_state, ReplicationJobState::WaitingFinality);
     }
 
     #[tokio::test]
     async fn recording_the_same_root_twice_reuses_the_same_job() {
         let pool = test_pool().await;
-        let destination = destination();
+        let destinations = all_destinations();
         let observed_root = ObservedRoot {
             root_hex: format!("0x{}", hex::encode([9u8; 32])),
             source_block_number: 77,
             source_tx_hash: "0xaaa".to_string(),
         };
 
-        let created = db::record_observed_root(&pool, &observed_root, &destination)
+        let created = db::record_observed_root(&pool, &observed_root, &destinations)
             .await
             .unwrap();
-        let created_again = db::record_observed_root(&pool, &observed_root, &destination)
+        let created_again = db::record_observed_root(&pool, &observed_root, &destinations)
             .await
             .unwrap();
 
@@ -525,29 +640,25 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
+        let submission_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM chain_submissions")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         assert!(created.created);
         assert!(!created_again.created);
         assert_eq!(observed_root_count, 1);
         assert_eq!(job_count, 1);
+        assert_eq!(submission_count, 3);
     }
 
     #[tokio::test]
     async fn recording_a_new_root_replaces_older_pending_roots() {
         let pool = test_pool().await;
-        let destination = destination();
+        let destinations = all_destinations();
 
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([1u8; 32])),
-                source_block_number: 10,
-                source_tx_hash: "0x111".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        record_root(&pool, &destinations, [1u8; 32], 10, "0x111").await;
 
         let created = db::record_observed_root(
             &pool,
@@ -556,7 +667,7 @@ mod tests {
                 source_block_number: 20,
                 source_tx_hash: "0x222".to_string(),
             },
-            &destination,
+            &destinations,
         )
         .await
         .unwrap();
@@ -577,39 +688,24 @@ mod tests {
     #[tokio::test]
     async fn runner_persists_retryable_failures() {
         let pool = test_pool().await;
-        let destination = destination();
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([3u8; 32])),
-                source_block_number: 55,
-                source_tx_hash: "0xbbb".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [3u8; 32], 55, "0xbbb").await;
 
         let runner = Runner::new_for_tests(
             pool.clone(),
-            destination,
+            destinations.clone(),
+            fake_clients_for(&destinations),
             Arc::new(NoopWatcher),
             Arc::new(FailingFinalityClient),
             Arc::new(StaticBundleClient),
             Arc::new(FakeProofService {
                 prove_calls: AtomicU64::new(0),
             }),
-            Arc::new(FakeSubmissionClient {
-                submitted: Mutex::new(Vec::new()),
-            }),
         );
 
         runner.advance_once().await.unwrap();
 
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
         assert_eq!(job.job_state, ReplicationJobState::WaitingFinality);
         assert_eq!(job.job_retry_count, 1);
         assert_eq!(
@@ -619,88 +715,278 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_proves_and_submits_without_reproving_after_restart() {
+    async fn runner_proves_once_and_fans_out_to_all_chains() {
         let pool = test_pool().await;
-        let destination = destination();
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([7u8; 32])),
-                source_block_number: 12_345,
-                source_tx_hash: "0xdef".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        let destinations = all_destinations();
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
 
-        let submission_client = Arc::new(FakeSubmissionClient {
+        let base = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
         });
+        let op = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let arb = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let submission_clients = HashMap::from([
+            ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
+            ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
+            ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+        ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
         });
 
         let runner = Runner::new_for_tests(
             pool.clone(),
-            destination,
+            destinations,
+            submission_clients,
             Arc::new(NoopWatcher),
             Arc::new(StaticFinalityClient { height: 12_345 }),
             Arc::new(StaticBundleClient),
             proof_service.clone(),
-            submission_client.clone(),
         );
 
         runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+        assert_eq!(
+            db::next_active_job(&pool).await.unwrap().unwrap().job_state,
+            ReplicationJobState::ReadyToProve
+        );
 
         runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_state, ReplicationJobState::ProofReady);
+        assert_eq!(
+            db::next_active_job(&pool).await.unwrap().unwrap().job_state,
+            ReplicationJobState::ProofReady
+        );
 
         runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_state, ReplicationJobState::Submitting);
-        assert_eq!(submission_client.submitted.lock().unwrap().len(), 1);
+        assert_eq!(
+            db::next_active_job(&pool).await.unwrap().unwrap().job_state,
+            ReplicationJobState::Submitting
+        );
+        assert_eq!(base.submitted.lock().unwrap().len(), 1);
+        assert_eq!(op.submitted.lock().unwrap().len(), 1);
+        assert_eq!(arb.submitted.lock().unwrap().len(), 1);
 
         runner.advance_once().await.unwrap();
-        assert!(db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .is_none());
-        assert_eq!(submission_client.submitted.lock().unwrap().len(), 1);
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
+        assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn chain_failure_does_not_block_other_chain_success() {
+        let pool = test_pool().await;
+        let destinations = all_destinations();
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let op = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: Some("op transport error".to_string()),
+            check_results: Mutex::new(vec![]),
+        });
+        let arb = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let submission_clients = HashMap::from([
+            ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
+            ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
+            ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+        ]);
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            submission_clients,
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        let submissions = db::job_submissions(&pool, 1).await.unwrap();
+        assert_eq!(
+            submission_state(&submissions, "base-sepolia"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "op-sepolia"),
+            ChainSubmissionState::Pending
+        );
+        assert_eq!(
+            submission_state(&submissions, "arbitrum-sepolia"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(base.submitted.lock().unwrap().len(), 1);
+        assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn mixed_chain_outcomes_settle_without_resubmitting_successes() {
+        let pool = test_pool().await;
+        let destinations = all_destinations();
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let op = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Failed("op revert".to_string()))]),
+        });
+        let arb = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let submission_clients = HashMap::from([
+            ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
+            ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
+            ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+        ]);
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            submission_clients,
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
+
+        let job_state =
+            sqlx::query_scalar::<_, String>("SELECT state FROM replication_jobs WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(job_state, ReplicationJobState::Failed.as_db_str());
+
+        let submissions = db::job_submissions(&pool, 1).await.unwrap();
+        assert_eq!(
+            submission_state(&submissions, "base-sepolia"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "op-sepolia"),
+            ChainSubmissionState::Failed
+        );
+        assert_eq!(
+            submission_state(&submissions, "arbitrum-sepolia"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(base.submitted.lock().unwrap().len(), 1);
+        assert_eq!(op.submitted.lock().unwrap().len(), 1);
+        assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn runner_does_not_resubmit_confirmed_chains_after_restart() {
+        let pool = test_pool().await;
+        let destinations = all_destinations();
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let op = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let arb = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let submission_clients = HashMap::from([
+            ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
+            ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
+            ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+        ]);
+        let proof_service = Arc::new(FakeProofService {
+            prove_calls: AtomicU64::new(0),
+        });
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            submission_clients.clone(),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            proof_service.clone(),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        assert_eq!(base.submitted.lock().unwrap().len(), 1);
+        assert_eq!(op.submitted.lock().unwrap().len(), 1);
+        assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+
+        let restarted = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            submission_clients,
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            proof_service.clone(),
+        );
+
+        restarted.advance_once().await.unwrap();
+
+        assert_eq!(base.submitted.lock().unwrap().len(), 1);
+        assert_eq!(op.submitted.lock().unwrap().len(), 1);
+        assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
     async fn runner_rate_limits_new_proof_requests() {
         let pool = test_pool().await;
-        let destination = destination();
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
         });
 
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([3u8; 32])),
-                source_block_number: 100,
-                source_tx_hash: "0xold".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        record_root(&pool, &destinations, [3u8; 32], 100, "0xold").await;
         sqlx::query(
             r#"
             UPDATE replication_jobs
@@ -714,42 +1000,26 @@ mod tests {
         .await
         .unwrap();
 
-        db::record_observed_root(
-            &pool,
-            &ObservedRoot {
-                root_hex: format!("0x{}", hex::encode([7u8; 32])),
-                source_block_number: 12_345,
-                source_tx_hash: "0xnew".to_string(),
-            },
-            &destination,
-        )
-        .await
-        .unwrap();
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xnew").await;
 
         let runner = Runner::new_for_tests(
             pool.clone(),
-            destination,
+            destinations.clone(),
+            fake_clients_for(&destinations),
             Arc::new(NoopWatcher),
             Arc::new(StaticFinalityClient { height: 12_345 }),
             Arc::new(StaticBundleClient),
             proof_service.clone(),
-            Arc::new(FakeSubmissionClient {
-                submitted: Mutex::new(Vec::new()),
-            }),
         );
 
         runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+        assert_eq!(
+            db::next_active_job(&pool).await.unwrap().unwrap().job_state,
+            ReplicationJobState::ReadyToProve
+        );
 
         runner.advance_once().await.unwrap();
-        let job = db::next_active_job(&pool, "base-sepolia")
-            .await
-            .unwrap()
-            .unwrap();
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
         assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
         assert!(job.proof_requested_at.is_none());
         assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 0);
@@ -770,15 +1040,74 @@ mod tests {
         pool
     }
 
-    fn destination() -> DestinationChainConfig {
+    async fn record_root(
+        pool: &SqlitePool,
+        destinations: &[DestinationChainConfig],
+        root: [u8; 32],
+        source_block_number: u64,
+        tx_hash: &str,
+    ) {
+        db::record_observed_root(
+            pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode(root)),
+                source_block_number,
+                source_tx_hash: tx_hash.to_string(),
+            },
+            destinations,
+        )
+        .await
+        .unwrap();
+    }
+
+    fn all_destinations() -> Vec<DestinationChainConfig> {
+        vec![
+            destination(DestinationChain::BaseSepolia),
+            destination(DestinationChain::OpSepolia),
+            destination(DestinationChain::ArbitrumSepolia),
+        ]
+    }
+
+    fn destination(chain: DestinationChain) -> DestinationChainConfig {
+        let suffix = match chain {
+            DestinationChain::BaseSepolia => "0123",
+            DestinationChain::OpSepolia => "0456",
+            DestinationChain::ArbitrumSepolia => "0789",
+        };
+
         DestinationChainConfig {
-            name: "base-sepolia",
-            chain_id: 84_532,
+            chain,
             rpc_url: "https://example.invalid".to_string(),
-            registry_address: "0x0000000000000000000000000000000000000123"
+            registry_address: format!("0x000000000000000000000000000000000000{suffix}")
                 .parse()
                 .unwrap(),
             private_key: "0x01".to_string(),
         }
+    }
+
+    fn fake_clients_for(
+        destinations: &[DestinationChainConfig],
+    ) -> HashMap<&'static str, Arc<dyn SubmissionClient>> {
+        destinations
+            .iter()
+            .map(|destination| {
+                (
+                    destination.name(),
+                    Arc::new(FakeSubmissionClient {
+                        submitted: Mutex::new(Vec::new()),
+                        submit_error: None,
+                        check_results: Mutex::new(vec![]),
+                    }) as Arc<dyn SubmissionClient>,
+                )
+            })
+            .collect()
+    }
+
+    fn submission_state(submissions: &[ChainSubmission], chain_name: &str) -> ChainSubmissionState {
+        submissions
+            .iter()
+            .find(|submission| submission.chain_name == chain_name)
+            .unwrap()
+            .submission_state
     }
 }

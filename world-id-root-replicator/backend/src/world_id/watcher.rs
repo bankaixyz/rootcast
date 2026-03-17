@@ -22,7 +22,7 @@ pub trait RootWatcher: Send + Sync {
     async fn poll_once(
         &self,
         pool: &SqlitePool,
-        destination: &DestinationChainConfig,
+        destinations: &[DestinationChainConfig],
     ) -> Result<()>;
 }
 
@@ -41,7 +41,7 @@ impl RootWatcher for WorldIdWatcher {
     async fn poll_once(
         &self,
         pool: &SqlitePool,
-        destination: &DestinationChainConfig,
+        destinations: &[DestinationChainConfig],
     ) -> Result<()> {
         let provider = ProviderBuilder::new()
             .connect(self.rpc_url.as_str())
@@ -87,7 +87,7 @@ impl RootWatcher for WorldIdWatcher {
 
         match observed_root_from_log(logs.last().expect("logs is not empty")) {
             Ok(observed_root) => {
-                let record = db::record_observed_root(pool, &observed_root, destination).await?;
+                let record = db::record_observed_root(pool, &observed_root, destinations).await?;
                 if record.created {
                     info!(
                         root = %observed_root.root_hex,

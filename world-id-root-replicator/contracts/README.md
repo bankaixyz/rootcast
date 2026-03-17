@@ -47,16 +47,21 @@ registry.
 
 ## Deployment
 
-Use the deploy helper from the `contracts/` directory.
+Use the deploy helper from the `contracts/` directory. It now supports Base
+Sepolia, OP Sepolia, and Arbitrum Sepolia through one script.
 
 ```bash
-./script/deploy_base_sepolia_registry.sh
+./script/deploy_registry.sh --chain base
 ```
 
-The script loads `../.env`, uses `BASE_SEPOLIA_RPC_URL` and
-`BASE_SEPOLIA_PRIVATE_KEY`, defaults the verifier to the direct SP1 v5 Groth16
-verifier `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`, and derives the current
-program vkey by running:
+The script loads `../.env`, selects the chain-specific `*_RPC_URL`,
+`*_PRIVATE_KEY`, and `*_REGISTRY_ADDRESS` variables for the requested chain,
+defaults the verifier to the direct SP1 v5 Groth16 verifier
+`0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`, and reads the program vkey from
+`PROGRAM_VKEY`.
+
+If `PROGRAM_VKEY` is missing, the script stops and shows the command you need
+to run to generate it:
 
 ```bash
 cargo run -p world-id-root-replicator-backend --bin print_program_vkey
@@ -65,13 +70,14 @@ cargo run -p world-id-root-replicator-backend --bin print_program_vkey
 If you want to override either constructor argument, pass them explicitly:
 
 ```bash
-./script/deploy_base_sepolia_registry.sh \
+./script/deploy_registry.sh \
+  --chain op \
   --verifier 0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5 \
   --program-vkey 0x...
 ```
 
 The script prints the deployed contract address and the exact
-`BASE_SEPOLIA_REGISTRY_ADDRESS=...` line to copy into `../.env`.
+`*_REGISTRY_ADDRESS=...` line to copy into `../.env`.
 
 ## Verification
 
@@ -79,11 +85,12 @@ To deploy and verify in one step, pass `--verify` and ensure
 `ETHERSCAN_API_KEY` is set in your environment.
 
 ```bash
-./script/deploy_base_sepolia_registry.sh --verify
+./script/deploy_registry.sh --chain arb --verify
 ```
 
-The script submits verification to Basescan with the pinned compiler version,
-optimizer runs, and ABI-encoded constructor arguments.
+The script submits verification to the correct explorer for the selected chain
+using the pinned compiler version, optimizer runs, and ABI-encoded constructor
+arguments.
 
 ## Current Base Sepolia deployment
 

@@ -1,3 +1,4 @@
+use crate::jobs::types::DestinationChain;
 use alloy_primitives::Address;
 use anyhow::{Context, Result};
 use bankai_sdk::Network;
@@ -11,16 +12,25 @@ pub struct Config {
     pub bankai_network: BankaiNetwork,
     pub sp1_prover: String,
     pub execution_rpc: String,
-    pub base_sepolia: DestinationChainConfig,
+    pub destination_chains: Vec<DestinationChainConfig>,
 }
 
 #[derive(Clone, Debug)]
 pub struct DestinationChainConfig {
-    pub name: &'static str,
-    pub chain_id: u64,
+    pub chain: DestinationChain,
     pub rpc_url: String,
     pub registry_address: Address,
     pub private_key: String,
+}
+
+impl DestinationChainConfig {
+    pub const fn name(&self) -> &'static str {
+        self.chain.as_str()
+    }
+
+    pub const fn chain_id(&self) -> u64 {
+        self.chain.chain_id()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,15 +58,24 @@ impl Config {
             bankai_network: required("BANKAI_NETWORK")?.parse()?,
             sp1_prover: required("SP1_PROVER")?,
             execution_rpc: required("EXECUTION_RPC")?,
-            base_sepolia: DestinationChainConfig {
-                name: "base-sepolia",
-                chain_id: 84_532,
-                rpc_url: required("BASE_SEPOLIA_RPC_URL")?,
-                registry_address: parse_address("BASE_SEPOLIA_REGISTRY_ADDRESS")?,
-                private_key: required("BASE_SEPOLIA_PRIVATE_KEY")?,
-            },
+            destination_chains: vec![
+                destination_chain_config(DestinationChain::BaseSepolia)?,
+                destination_chain_config(DestinationChain::OpSepolia)?,
+                destination_chain_config(DestinationChain::ArbitrumSepolia)?,
+            ],
         })
     }
+}
+
+fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainConfig> {
+    let prefix = chain.env_prefix();
+
+    Ok(DestinationChainConfig {
+        chain,
+        rpc_url: required(&format!("{prefix}_RPC_URL"))?,
+        registry_address: parse_address(&format!("{prefix}_REGISTRY_ADDRESS"))?,
+        private_key: required(&format!("{prefix}_PRIVATE_KEY"))?,
+    })
 }
 
 fn required(name: &str) -> Result<String> {
