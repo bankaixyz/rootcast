@@ -72,23 +72,34 @@ impl RootWatcher for WorldIdWatcher {
             .get_logs(&filter)
             .await
             .context("fetch TreeChanged logs")?;
-        for log in logs {
-            match observed_root_from_log(&log) {
-                Ok(observed_root) => {
-                    let created =
-                        db::record_observed_root(pool, &observed_root, destination).await?;
-                    if created {
-                        info!(
-                            root = %observed_root.root_hex,
-                            source_block_number = observed_root.source_block_number,
-                            source_tx_hash = %observed_root.source_tx_hash,
-                            "detected new World ID root"
-                        );
-                    }
+        if logs.is_empty() {
+            return Ok(());
+        }
+
+        if logs.len() > 1 {
+            info!(
+                from_block,
+                latest_block,
+                skipped_root_changes = logs.len() - 1,
+                "coalescing World ID root changes to the newest event"
+            );
+        }
+
+        match observed_root_from_log(logs.last().expect("logs is not empty")) {
+            Ok(observed_root) => {
+                let record = db::record_observed_root(pool, &observed_root, destination).await?;
+                if record.created {
+                    info!(
+                        root = %observed_root.root_hex,
+                        source_block_number = observed_root.source_block_number,
+                        source_tx_hash = %observed_root.source_tx_hash,
+                        replaced_pending_roots = record.replaced_pending_count,
+                        "detected latest World ID root"
+                    );
                 }
-                Err(error) => {
-                    warn!(?error, "skipping malformed World ID root change log");
-                }
+            }
+            Err(error) => {
+                warn!(?error, "skipping malformed World ID root change log");
             }
         }
 

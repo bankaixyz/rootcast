@@ -249,26 +249,37 @@ Acceptance checks:
 Implemented in this phase:
 - the Sepolia watcher now polls the World ID `TreeChanged` event and persists
   `root_hex`, `source_block_number`, and `source_tx_hash`
+- the watcher now coalesces catch-up windows to the newest observed root change
+  so the worker fast-forwards instead of persisting a backlog of superseded
+  roots
 - the backend runner now advances one SQLite-backed job through
   `WaitingFinality -> ReadyToProve -> ProofInProgress -> ProofReady -> Submitting -> Completed`
 - Bankai finalized-height polling now gates proof generation on the persisted
   exact source block
+- Bankai finality checks now log the finalized height, required source block,
+  and wait-versus-advance decision on each poll
 - the Bankai proof-bundle request now uses the persisted source block and the
   frozen World ID root storage slot
+- proof requests are now rate-limited so a newly detected root does not trigger
+  a fresh proving request if the most recent proof request is less than 50
+  minutes old
 - the SP1 backend now persists a proof artifact, reloads it after restart, and
   refuses public-values mismatches
 - the SP1 guest now commits ABI-encoded `{source_block_number, root}` public
   values so the backend and contract decode the same shape
 - Base Sepolia submission is wired for this phase through one on-chain SP1
   verifier path with an immutable program-vkey binding
+- the Base Sepolia registry is now deployed and verified at
+  `0xbF6d105433698385293f5280987e8A5b1617d776` with the direct v5 Groth16
+  verifier and the current program vkey
 - SQLite uniqueness now enforces one replication job per observed root with a
   follow-up migration for existing local databases
 
 Still intentionally pending:
+- one live SP1 network proof against a real Bankai bundle and prover
+  credentials
 - live validation against a real Bankai proof bundle
 - live validation of one Base Sepolia submission storing a root on-chain
-- final deployment choice between the direct v5 Groth16 verifier and the
-  Groth16 gateway
 - end-to-end proof generation against real network credentials and contracts
 
 ## Acceptance criteria

@@ -40,3 +40,7 @@ The current implementation includes:
 
 The remaining work is live end-to-end validation against deployed verifier and
 registry contracts, multichain fan-out, and frontend rendering.
+
+For contract deployment and verification, see
+[`contracts/README.md`](contracts/README.md) and the helper script
+`contracts/script/deploy_base_sepolia_registry.sh`.

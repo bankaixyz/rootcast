@@ -44,3 +44,54 @@ cargo run -p world-id-root-replicator-backend --bin print_program_vkey
 
 Use that value as the `programVKey` constructor argument when you deploy the
 registry.
+
+## Deployment
+
+Use the deploy helper from the `contracts/` directory.
+
+```bash
+./script/deploy_base_sepolia_registry.sh
+```
+
+The script loads `../.env`, uses `BASE_SEPOLIA_RPC_URL` and
+`BASE_SEPOLIA_PRIVATE_KEY`, defaults the verifier to the direct SP1 v5 Groth16
+verifier `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`, and derives the current
+program vkey by running:
+
+```bash
+cargo run -p world-id-root-replicator-backend --bin print_program_vkey
+```
+
+If you want to override either constructor argument, pass them explicitly:
+
+```bash
+./script/deploy_base_sepolia_registry.sh \
+  --verifier 0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5 \
+  --program-vkey 0x...
+```
+
+The script prints the deployed contract address and the exact
+`BASE_SEPOLIA_REGISTRY_ADDRESS=...` line to copy into `../.env`.
+
+## Verification
+
+To deploy and verify in one step, pass `--verify` and ensure
+`ETHERSCAN_API_KEY` is set in your environment.
+
+```bash
+./script/deploy_base_sepolia_registry.sh --verify
+```
+
+The script submits verification to Basescan with the pinned compiler version,
+optimizer runs, and ABI-encoded constructor arguments.
+
+## Current Base Sepolia deployment
+
+The current verified Base Sepolia deployment is:
+
+- registry:
+  `0xbF6d105433698385293f5280987e8A5b1617d776`
+- verifier:
+  `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`
+- program vkey:
+  `0x00121643a8e0b1426431683ed5bce193445f3c596ad02d126103658502d6af3f`

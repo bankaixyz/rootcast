@@ -14,6 +14,7 @@ use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(5);
+const MIN_PROOF_REQUEST_AGE_SECS: i64 = 50 * 60;
 
 pub struct Runner {
     pool: SqlitePool,
@@ -120,6 +121,12 @@ impl Runner {
         let finalized_height = match self.finality_client.finalized_execution_height().await {
             Ok(height) => height,
             Err(error) => {
+                warn!(
+                    ?error,
+                    job_id = job.job_id,
+                    source_block_number = job.source_block_number,
+                    "failed to fetch Bankai finality"
+                );
                 db::mark_job_retryable(
                     &self.pool,
                     job.job_id,
@@ -131,23 +138,40 @@ impl Runner {
             }
         };
 
+        let ready = finalized_height >= job.source_block_number;
         if finalized_height < job.source_block_number {
             info!(
                 job_id = job.job_id,
-                source_block_number = job.source_block_number,
-                finalized_height,
-                "waiting for Bankai finality"
+                root = %job.root_hex,
+                bankai_finalized_height = finalized_height,
+                required_source_block = job.source_block_number,
+                decision = if ready { "ready_to_prove" } else { "wait" },
+                "checked Bankai finality"
             );
             return Ok(());
         }
 
+        info!(
+            job_id = job.job_id,
+            root = %job.root_hex,
+            bankai_finalized_height = finalized_height,
+            required_source_block = job.source_block_number,
+            decision = "ready_to_prove",
+            "checked Bankai finality"
+        );
         db::mark_observed_root_finalized(&self.pool, job.observed_root_id).await?;
         db::update_job_state(&self.pool, job.job_id, ReplicationJobState::ReadyToProve).await?;
         Ok(())
     }
 
     async fn advance_ready_to_prove(&self, job: ActiveJob) -> Result<()> {
-        db::update_job_state(&self.pool, job.job_id, ReplicationJobState::ProofInProgress).await?;
+        if job.proof_requested_at.is_none() {
+            if let Some(last_request) = db::latest_proof_request(&self.pool).await? {
+                if last_request.age_seconds < MIN_PROOF_REQUEST_AGE_SECS {
+                    return Ok(());
+                }
+            }
+        }
 
         let bundle_bytes = match self
             .bundle_client
@@ -166,6 +190,8 @@ impl Runner {
                 return Ok(());
             }
         };
+
+        db::mark_job_proof_in_progress(&self.pool, job.job_id).await?;
 
         let expected_public_values = PublicValues {
             source_block_number: job.source_block_number,
@@ -377,7 +403,9 @@ mod tests {
         }
     }
 
-    struct FakeProofService;
+    struct FakeProofService {
+        prove_calls: AtomicU64,
+    }
 
     #[async_trait]
     impl ProofService for FakeProofService {
@@ -387,6 +415,7 @@ mod tests {
             _bundle_bytes: &[u8],
             expected_public_values: &PublicValues,
         ) -> Result<crate::proving::sp1::ProofArtifact> {
+            self.prove_calls.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!("fake-proof-{job_id}.bin"));
             std::fs::write(&path, b"proof").unwrap();
             Ok(crate::proving::sp1::ProofArtifact {
@@ -453,7 +482,9 @@ mod tests {
             Arc::new(NoopWatcher),
             Arc::new(StaticFinalityClient { height: 99 }),
             Arc::new(StaticBundleClient),
-            Arc::new(FakeProofService),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
             Arc::new(FakeSubmissionClient {
                 submitted: Mutex::new(Vec::new()),
             }),
@@ -495,10 +526,52 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(created);
-        assert!(!created_again);
+        assert!(created.created);
+        assert!(!created_again.created);
         assert_eq!(observed_root_count, 1);
         assert_eq!(job_count, 1);
+    }
+
+    #[tokio::test]
+    async fn recording_a_new_root_replaces_older_pending_roots() {
+        let pool = test_pool().await;
+        let destination = destination();
+
+        db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([1u8; 32])),
+                source_block_number: 10,
+                source_tx_hash: "0x111".to_string(),
+            },
+            &destination,
+        )
+        .await
+        .unwrap();
+
+        let created = db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([2u8; 32])),
+                source_block_number: 20,
+                source_tx_hash: "0x222".to_string(),
+            },
+            &destination,
+        )
+        .await
+        .unwrap();
+
+        let roots = sqlx::query_as::<_, (String, i64)>(
+            "SELECT root_hex, source_block_number FROM observed_roots",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert!(created.created);
+        assert_eq!(created.replaced_pending_count, 1);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].1, 20);
     }
 
     #[tokio::test]
@@ -523,7 +596,9 @@ mod tests {
             Arc::new(NoopWatcher),
             Arc::new(FailingFinalityClient),
             Arc::new(StaticBundleClient),
-            Arc::new(FakeProofService),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
             Arc::new(FakeSubmissionClient {
                 submitted: Mutex::new(Vec::new()),
             }),
@@ -562,6 +637,9 @@ mod tests {
         let submission_client = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
         });
+        let proof_service = Arc::new(FakeProofService {
+            prove_calls: AtomicU64::new(0),
+        });
 
         let runner = Runner::new_for_tests(
             pool.clone(),
@@ -569,7 +647,7 @@ mod tests {
             Arc::new(NoopWatcher),
             Arc::new(StaticFinalityClient { height: 12_345 }),
             Arc::new(StaticBundleClient),
-            Arc::new(FakeProofService),
+            proof_service.clone(),
             submission_client.clone(),
         );
 
@@ -601,6 +679,80 @@ mod tests {
             .unwrap()
             .is_none());
         assert_eq!(submission_client.submitted.lock().unwrap().len(), 1);
+        assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn runner_rate_limits_new_proof_requests() {
+        let pool = test_pool().await;
+        let destination = destination();
+        let proof_service = Arc::new(FakeProofService {
+            prove_calls: AtomicU64::new(0),
+        });
+
+        db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([3u8; 32])),
+                source_block_number: 100,
+                source_tx_hash: "0xold".to_string(),
+            },
+            &destination,
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            UPDATE replication_jobs
+            SET
+                state = ?,
+                proof_requested_at = datetime('now', '-49 minutes')
+            "#,
+        )
+        .bind(ReplicationJobState::Completed.as_db_str())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([7u8; 32])),
+                source_block_number: 12_345,
+                source_tx_hash: "0xnew".to_string(),
+            },
+            &destination,
+        )
+        .await
+        .unwrap();
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destination,
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            proof_service.clone(),
+            Arc::new(FakeSubmissionClient {
+                submitted: Mutex::new(Vec::new()),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        let job = db::next_active_job(&pool, "base-sepolia")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+
+        runner.advance_once().await.unwrap();
+        let job = db::next_active_job(&pool, "base-sepolia")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+        assert!(job.proof_requested_at.is_none());
+        assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 0);
     }
 
     async fn test_pool() -> SqlitePool {

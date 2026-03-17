@@ -161,3 +161,61 @@ duplicate or conflicting submissions.
   decoding
 - The slice is locally coherent now, but real-network validation is still
   needed for Bankai proof generation and Base Sepolia submission
+
+### 2026-03-17 - Catch-up coalescing and prove-rate limiting
+
+**By:** Codex
+
+**Actions:**
+- Updated the watcher so each poll window keeps only the newest `TreeChanged`
+  event and drops older superseded root changes instead of persisting a backlog
+- Added a prove-request cooldown so the runner only starts a fresh proof when
+  the last requested proof is at least 50 minutes old
+- Added structured Bankai finality logs that show the finalized height, the
+  required source block, and the wait-versus-advance decision on every poll
+- Added a follow-up SQLite migration for `proof_requested_at` and expanded the
+  backend test suite to cover coalescing and cooldown behavior
+
+**Learnings:**
+- The right cutoff is at the proving boundary, not at submission time. That
+  keeps the persisted state simple while still preventing proof storms during
+  bursty World ID updates
+- Initial catch-up does not need historical intermediate roots for this phase
+  because later World ID roots already commit the full tree state
+
+### 2026-03-17 - Remaining Phase 2 work
+
+**By:** Codex
+
+**Actions:**
+- Re-reviewed the active Phase 2 plan and this execution todo after the latest
+  implementation passes
+- Confirmed the core local slice is implemented and the remaining incomplete
+  work is now concentrated in live validation rather than local lifecycle code
+
+**Learnings:**
+- The still-open acceptance criteria are the real network boundaries:
+  successful SP1 proving against a real Bankai bundle, and one successful Base
+  Sepolia on-chain submission storing the root
+- The next practical Phase 2 step is to run one funded, verifier-bound, end to
+  end proof-and-submit exercise against real credentials and the deployed
+  registry
+
+### 2026-03-17 - Base Sepolia registry deployed and verified
+
+**By:** Codex
+
+**Actions:**
+- Deployed `WorldIdRootRegistry` to Base Sepolia at
+  `0xbF6d105433698385293f5280987e8A5b1617d776`
+- Pinned the deployment to the direct SP1 v5 Groth16 verifier
+  `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`
+- Derived the current program vkey
+  `0x00121643a8e0b1426431683ed5bce193445f3c596ad02d126103658502d6af3f`
+  from the compiled guest and used it in the constructor
+- Verified the deployed contract successfully on Basescan
+
+**Learnings:**
+- The contract deployment milestone is complete now, so the remaining live
+  Phase 2 risk is no longer deployment plumbing; it is waiting for Bankai
+  finality and then exercising one full proof-and-submit cycle end to end
