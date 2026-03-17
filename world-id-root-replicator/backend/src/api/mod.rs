@@ -26,8 +26,8 @@ pub fn router(pool: SqlitePool, destination_chains: Vec<DestinationChainConfig>)
         .into_iter()
         .map(|chain| ConfiguredChain {
             name: chain.name(),
-            chain_id: chain.chain_id(),
-            registry_address: chain.registry_address.to_string(),
+            chain_id: chain.chain_id().to_string(),
+            registry_address: chain.contract_address,
         })
         .collect();
 
@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(snapshot["replication_triggered"], false);
 
         let targets = snapshot["targets"].as_array().unwrap();
-        assert_eq!(targets.len(), 3);
+        assert_eq!(targets.len(), 4);
         assert!(targets
             .iter()
             .all(|target| target["display_state"] == "blocked"));
@@ -331,6 +331,7 @@ mod tests {
             destination(DestinationChain::BaseSepolia),
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
+            destination(DestinationChain::StarknetSepolia),
         ]
     }
 
@@ -339,15 +340,22 @@ mod tests {
             DestinationChain::BaseSepolia => "0123",
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
+            DestinationChain::StarknetSepolia => "0abc",
         };
 
         DestinationChainConfig {
             chain,
             rpc_url: "https://example.invalid".to_string(),
-            registry_address: format!("0x000000000000000000000000000000000000{suffix}")
-                .parse()
-                .unwrap(),
+            contract_address: format!("0x000000000000000000000000000000000000{suffix}"),
             private_key: "0x01".to_string(),
+            account_address: if chain == DestinationChain::StarknetSepolia {
+                Some(
+                    "0x04f213f87dd6eec0951c49ec9e2d577fabf843d7e022f33d04e6a25ff8954e61"
+                        .to_string(),
+                )
+            } else {
+                None
+            },
         }
     }
 }

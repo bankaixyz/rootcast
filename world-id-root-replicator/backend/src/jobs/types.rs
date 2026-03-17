@@ -34,14 +34,25 @@ pub enum DestinationChain {
     BaseSepolia,
     OpSepolia,
     ArbitrumSepolia,
+    StarknetSepolia,
 }
 
 impl DestinationChain {
-    pub const fn chain_id(self) -> u64 {
+    pub const fn chain_id(self) -> &'static str {
         match self {
-            Self::BaseSepolia => 84_532,
-            Self::OpSepolia => 11_155_420,
-            Self::ArbitrumSepolia => 421_614,
+            Self::BaseSepolia => "84532",
+            Self::OpSepolia => "11155420",
+            Self::ArbitrumSepolia => "421614",
+            Self::StarknetSepolia => "0x534e5f5345504f4c4941",
+        }
+    }
+
+    pub const fn evm_chain_id(self) -> Option<u64> {
+        match self {
+            Self::BaseSepolia => Some(84_532),
+            Self::OpSepolia => Some(11_155_420),
+            Self::ArbitrumSepolia => Some(421_614),
+            Self::StarknetSepolia => None,
         }
     }
 
@@ -50,6 +61,7 @@ impl DestinationChain {
             Self::BaseSepolia => "base-sepolia",
             Self::OpSepolia => "op-sepolia",
             Self::ArbitrumSepolia => "arbitrum-sepolia",
+            Self::StarknetSepolia => "starknet-sepolia",
         }
     }
 
@@ -58,6 +70,14 @@ impl DestinationChain {
             Self::BaseSepolia => "BASE_SEPOLIA",
             Self::OpSepolia => "OP_SEPOLIA",
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
+            Self::StarknetSepolia => "STARKNET_SEPOLIA",
+        }
+    }
+
+    pub const fn is_evm(self) -> bool {
+        match self {
+            Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => true,
+            Self::StarknetSepolia => false,
         }
     }
 }

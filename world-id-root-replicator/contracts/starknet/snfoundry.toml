@@ -1,0 +1,5 @@
+[sncast.default]
+url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_9"
+
+[sncast.starknet-sepolia]
+url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_9"

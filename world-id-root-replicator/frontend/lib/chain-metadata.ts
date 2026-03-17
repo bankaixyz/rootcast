@@ -20,6 +20,12 @@ const TARGET_CHAIN_METADATA: Record<
     order: 2,
     txBaseUrl: "https://sepolia-optimism.etherscan.io/tx/",
   },
+  "starknet-sepolia": {
+    addressBaseUrl: "https://sepolia.starkscan.co/contract/",
+    label: "Starknet",
+    order: 3,
+    txBaseUrl: "https://sepolia.starkscan.co/tx/",
+  },
 };
 
 export function chainLabel(chainName: string) {

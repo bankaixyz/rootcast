@@ -1,6 +1,6 @@
 # Contracts
 
-This directory contains the destination-chain verification and storage contract
+This directory contains the destination-chain verification and storage contracts
 for the World ID root replicator.
 
 `WorldIdRootRegistry.sol` verifies SP1 proofs on-chain, decodes the ABI-encoded
@@ -45,7 +45,7 @@ cargo run -p world-id-root-replicator-backend --bin print_program_vkey
 Use that value as the `programVKey` constructor argument when you deploy the
 registry.
 
-## Deployment
+## EVM deployment
 
 Use the deploy helper from the `contracts/` directory. It now supports Base
 Sepolia, OP Sepolia, and Arbitrum Sepolia through one script.
@@ -91,6 +91,24 @@ To deploy and verify in one step, pass `--verify` and ensure
 The script submits verification to the correct explorer for the selected chain
 using the pinned compiler version, optimizer runs, and ABI-encoded constructor
 arguments.
+
+## Starknet deployment
+
+The Starknet Sepolia equivalent lives in [`starknet/`](./starknet/README.md).
+It pins Garaga's shared SP1 verifier class hash and exposes a
+`submit_root(Array<felt252>)` entrypoint so the backend can relay the same SP1
+proof artifact to Starknet.
+
+Deploy it from the Starknet package directory:
+
+```bash
+cd starknet
+./deploy.sh --program-vkey 0x...
+```
+
+The script imports the configured account into `sncast`, declares the Cairo
+contract, deploys it, and prints the exact
+`STARKNET_SEPOLIA_REGISTRY_ADDRESS=...` line to copy into `../.env`.
 
 ## Current Base Sepolia deployment
 

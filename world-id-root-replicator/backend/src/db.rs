@@ -145,7 +145,7 @@ impl TryFrom<JobSnapshotRow> for JobSnapshot {
 pub struct ChainSubmissionRow {
     pub submission_id: i64,
     pub chain_name: String,
-    pub chain_id: i64,
+    pub chain_id: String,
     pub registry_address: String,
     pub submission_state: String,
     pub submission_tx_hash: Option<String>,
@@ -157,7 +157,7 @@ pub struct ChainSubmissionRow {
 pub struct ChainSubmission {
     pub submission_id: i64,
     pub chain_name: String,
-    pub chain_id: u64,
+    pub chain_id: String,
     pub registry_address: String,
     pub submission_state: ChainSubmissionState,
     pub submission_tx_hash: Option<String>,
@@ -172,7 +172,7 @@ impl TryFrom<ChainSubmissionRow> for ChainSubmission {
         Ok(Self {
             submission_id: row.submission_id,
             chain_name: row.chain_name,
-            chain_id: u64::try_from(row.chain_id).context("chain_id does not fit in u64")?,
+            chain_id: row.chain_id,
             registry_address: row.registry_address,
             submission_state: row.submission_state.parse()?,
             submission_tx_hash: row.submission_tx_hash,
@@ -484,8 +484,8 @@ pub async fn record_observed_root(
         )
         .bind(job_id)
         .bind(destination.name())
-        .bind(to_i64(destination.chain_id())?)
-        .bind(destination.registry_address.to_string())
+        .bind(destination.chain_id())
+        .bind(&destination.contract_address)
         .bind(ChainSubmissionState::Pending.as_db_str())
         .execute(&mut *tx)
         .await?;
@@ -565,7 +565,7 @@ pub async fn job_submissions(pool: &SqlitePool, job_id: i64) -> Result<Vec<Chain
         SELECT
             id AS submission_id,
             chain_name,
-            chain_id,
+            CAST(chain_id AS TEXT) AS chain_id,
             registry_address,
             state AS submission_state,
             tx_hash AS submission_tx_hash,

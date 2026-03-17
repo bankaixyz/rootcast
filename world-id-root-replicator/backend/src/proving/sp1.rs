@@ -3,8 +3,13 @@ use alloy_sol_types::SolValue;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use bankai_types::inputs::ProofBundle;
+use garaga_rs::calldata::full_proof_with_hints::groth16::{
+    get_groth16_calldata_felt, get_sp1_vk, Groth16Proof,
+};
+use garaga_rs::definitions::CurveID;
 use serde::{Deserialize, Serialize};
-use sp1_sdk::{include_elf, ProverClient, SP1ProofWithPublicValues, SP1Stdin};
+use sp1_sdk::{include_elf, HashableKey, Prover, ProverClient, SP1ProofWithPublicValues, SP1Stdin};
+use starknet::core::types::Felt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,6 +26,12 @@ pub struct ProofArtifact {
     pub path: String,
     pub public_values: Vec<u8>,
     pub decoded_public_values: PublicValues,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProgramVkey {
+    pub bytes: Vec<u8>,
+    pub hex: String,
 }
 
 #[async_trait]
@@ -124,6 +135,43 @@ impl ProofService for Sp1ProofService {
 pub fn load_proof(path: impl AsRef<Path>) -> Result<SP1ProofWithPublicValues> {
     SP1ProofWithPublicValues::load(path.as_ref())
         .with_context(|| format!("load SP1 proof artifact from {}", path.as_ref().display()))
+}
+
+pub fn current_program_vkey() -> ProgramVkey {
+    let (_, vk) = ProverClient::builder()
+        .cpu()
+        .build()
+        .setup(WORLD_ID_ROOT_REPLICATOR_ELF);
+    let hex = vk.bytes32().to_string();
+
+    ProgramVkey {
+        bytes: hex::decode(hex.trim_start_matches("0x")).expect("decode program vkey"),
+        hex,
+    }
+}
+
+pub fn starknet_proof_calldata(
+    path: impl AsRef<Path>,
+    program_vkey: &ProgramVkey,
+) -> Result<Vec<Felt>> {
+    let proof = load_proof(path)?;
+    let groth16_proof = Groth16Proof::from_sp1(
+        program_vkey.bytes.clone(),
+        proof.public_values.to_vec(),
+        proof.bytes(),
+    );
+    let sp1_groth16_vk = get_sp1_vk();
+    let calldata_bigint =
+        get_groth16_calldata_felt(&groth16_proof, &sp1_groth16_vk, CurveID::BN254)
+            .map_err(|error| anyhow!("generate Starknet calldata from SP1 proof: {error}"))?;
+
+    calldata_bigint
+        .iter()
+        .map(|bigint| {
+            let hex_str = format!("{:064x}", bigint.to_biguint());
+            Felt::from_hex(&format!("0x{hex_str}")).context("convert Garaga calldata limb to felt")
+        })
+        .collect()
 }
 
 pub fn decode_public_values(bytes: &[u8]) -> Result<PublicValues> {

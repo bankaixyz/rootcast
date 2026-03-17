@@ -37,12 +37,14 @@ The current implementation includes:
 - exact-block proof-bundle retrieval
 - SP1 public values and proof artifact handling
 - contract-side SP1 verifier and program-vkey binding
+- Starknet Sepolia destination contract and relay path
 - World ID root source constants
 - read-only API endpoints for status, roots, chains, and job detail
 - a dark frontend landing page and dashboard for replication state
 
 The remaining work is live end-to-end validation against deployed verifier and
-registry contracts, plus the Phase 5 deployment and productionization work.
+registry contracts across the EVM targets and Starknet Sepolia, plus the Phase
+5 deployment and productionization work.
 
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script
