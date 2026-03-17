@@ -1,4 +1,13 @@
-import type { CSSProperties, ReactNode } from "react";
+"use client";
+
+import {
+  useRef,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { ChainStatus, RootSnapshot } from "@/lib/api";
 import {
   allKnownTargetChains,
@@ -9,6 +18,8 @@ import {
   sourceTxUrl,
 } from "@/lib/chain-metadata";
 import { formatBlock, shortHash } from "@/lib/format";
+
+const TARGET_GAP = 14;
 
 type ReplicationTopologyProps = {
   snapshot: RootSnapshot | null;
@@ -31,14 +42,14 @@ type TopologyTarget = {
   error_message: string | null;
 };
 
+const FLOW_HUB_OFFSET = 18;
+
 export function ReplicationTopology({
   snapshot,
   chains,
   errorMessage,
 }: ReplicationTopologyProps) {
   const targets = buildTargets(chains, snapshot, Boolean(errorMessage));
-  const targetLayout = buildTargetLayout(targets);
-  const flowHeight = Math.max(320, 170 + targetLayout.rows.length * 116);
   const sourceState = deriveSourceState(snapshot);
   const finalized = Boolean(snapshot?.bankai_finalized_at);
   const showStageContext = Boolean(errorMessage) || snapshot?.job_state !== "completed";
@@ -49,6 +60,93 @@ export function ReplicationTopology({
     ? errorMessage
     : snapshot?.stage_description ??
       "The topology stays in place and fills in as soon as the next L1 root update is observed.";
+
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const sourceRef = useRef<HTMLElement | null>(null);
+  const targetAreaRef = useRef<HTMLDivElement>(null);
+
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [cardHeight, setCardHeight] = useState(148);
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [flowLayout, setFlowLayout] = useState({
+    canvasWidth: 1000,
+    canvasHeight: 640,
+    hubX: 350,
+    endX: 700,
+  });
+
+  // Measure actual card height after first render
+  useLayoutEffect(() => {
+    const inner = targetAreaRef.current?.querySelector(".target-scroll-inner");
+    if (!inner) return;
+    const firstCard = inner.querySelector(".target-node") as HTMLElement | null;
+    if (firstCard) setCardHeight(firstCard.offsetHeight);
+  }, [targets.length]);
+
+  // Reset scroll when target count changes
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [targets.length]);
+
+  const { hubX, endX, canvasWidth, canvasHeight } = flowLayout;
+  const stride = cardHeight + TARGET_GAP;
+  const contentHeight =
+    targets.length * cardHeight + Math.max(0, targets.length - 1) * TARGET_GAP;
+  const canScroll = contentHeight > canvasHeight;
+  const maxScroll = Math.max(0, contentHeight - canvasHeight);
+  const startOffset = canScroll ? 0 : (canvasHeight - contentHeight) / 2;
+
+  // Measure X positions via ResizeObserver
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const measure = () => {
+      const cr = canvas.getBoundingClientRect();
+      const source = sourceRef.current;
+      const targetArea = targetAreaRef.current;
+
+      setFlowLayout({
+        canvasWidth: cr.width,
+        canvasHeight: cr.height,
+        hubX: source
+          ? source.getBoundingClientRect().right - cr.left + FLOW_HUB_OFFSET
+          : cr.width * 0.25,
+        endX: targetArea
+          ? targetArea.getBoundingClientRect().left - cr.left - 10
+          : cr.width * 0.7,
+      });
+      setLayoutReady(true);
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
+
+  // Wheel-based scrolling on the entire canvas
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || !canScroll) return;
+
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      setScrollOffset((prev) =>
+        Math.max(0, Math.min(maxScroll, prev + e.deltaY)),
+      );
+    };
+
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [canScroll, maxScroll]);
+
+  const active = Boolean(snapshot);
+  const hubY = canvasHeight / 2;
+
+  const targetYs = targets.map(
+    (_, i) => startOffset + i * stride + cardHeight / 2 - scrollOffset,
+  );
 
   return (
     <main className="topology-page">
@@ -67,8 +165,14 @@ export function ReplicationTopology({
       </header>
 
       <section className="topology-card">
-        <section className="topology-canvas">
-          <article className="source-panel">
+        <section
+          className="topology-canvas"
+          ref={canvasRef}
+        >
+          <article
+            className="source-panel"
+            ref={(el) => { sourceRef.current = el; }}
+          >
             <div className="source-panel__header">
               <span className="source-panel__eyebrow">L1 source</span>
               <h2 className="source-panel__title">Ethereum Sepolia</h2>
@@ -144,93 +248,146 @@ export function ReplicationTopology({
             </div>
           </article>
 
-          <TopologyFlow
-            active={Boolean(snapshot)}
-            height={flowHeight}
-            rows={targetLayout.rows}
-          />
+          {/* SVG flow overlay — absolutely positioned across the full canvas */}
+          <svg
+            aria-hidden="true"
+            className="flow-overlay"
+            style={{ opacity: layoutReady ? 1 : 0 }}
+            viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+          >
+            <defs>
+              <linearGradient id="topology-flow-gradient" x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="white" stopOpacity="0.02" />
+                <stop offset="45%" stopColor="white" stopOpacity="0.48" />
+                <stop offset="100%" stopColor="white" stopOpacity="0.16" />
+              </linearGradient>
+            </defs>
+
+            <line
+              className={`flow-trunk ${active ? "flow-trunk--active" : ""}`}
+              x1={hubX - FLOW_HUB_OFFSET}
+              x2={hubX}
+              y1={hubY}
+              y2={hubY}
+            />
+            <circle className="flow-hub" cx={hubX} cy={hubY} r={3.5} />
+
+            {targets.map((target, i) => {
+              const y = targetYs[i];
+              const d = buildFlowPath(hubX, hubY, endX, y);
+              const signalClass = flowSignalClass(target.display_state, active);
+
+              return (
+                <g
+                  className="flow-branch"
+                  key={target.chain_name}
+                  style={{ "--flow-delay": `${i * 1.1}s` } as CSSProperties}
+                >
+                  <path
+                    className="flow-branch__base"
+                    d={d}
+                  />
+                  <path className={`flow-branch__signal ${signalClass}`} d={d} />
+                  <circle className="flow-branch__node" cx={endX} cy={y} r={3.5} />
+                </g>
+              );
+            })}
+          </svg>
 
           <div
-            className="target-lanes"
-            style={
-              {
-                "--target-columns": targetLayout.columns,
-                "--target-row-count": Math.max(1, targetLayout.rows.length),
-                minHeight: `${flowHeight}px`,
-              } as CSSProperties
-            }
+            className="target-scroll-area"
+            ref={targetAreaRef}
+            style={{ justifyContent: canScroll ? "flex-start" : "center" }}
           >
-            {targetLayout.rows.map((row) => (
-              <div className="target-lane" key={row.id}>
-                {row.targets.map((target) => (
-                  <article className="target-node" key={target.chain_name}>
-                    <div className="target-node__header">
-                      <div>
-                        <span className="target-node__eyebrow">Target</span>
-                        <h3 className="target-node__title">
-                          {chainLabel(target.chain_name)}
-                        </h3>
-                      </div>
-                      <span className={`target-state target-state--${target.display_state}`}>
-                        {targetStatusLabel(target.display_state, snapshot)}
-                      </span>
+            <div
+              className="target-scroll-inner"
+              style={{
+                transform: canScroll
+                  ? `translateY(${-scrollOffset}px)`
+                  : undefined,
+              }}
+            >
+              {targets.map((target) => (
+                <article className="target-node" key={target.chain_name}>
+                  <div className="target-node__header">
+                    <div>
+                      <span className="target-node__eyebrow">Target</span>
+                      <h3 className="target-node__title">
+                        {chainLabel(target.chain_name)}
+                      </h3>
                     </div>
+                    <span className={`target-state target-state--${target.display_state}`}>
+                      {targetStatusLabel(target.display_state, snapshot)}
+                    </span>
+                  </div>
 
-                    <div className="target-node__rows">
-                      <TargetRow
-                        label="Contract"
-                        value={
-                          target.registry_address ? (
-                            <a
-                              className="data-link"
-                              href={chainAddressUrl(
-                                target.chain_name,
-                                target.registry_address,
-                              )}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              {shortHash(target.registry_address, 8, 6)}
-                            </a>
+                  <div className="target-node__rows">
+                    <TargetRow
+                      label="Contract"
+                      value={
+                        target.registry_address ? (
+                          <a
+                            className="data-link"
+                            href={chainAddressUrl(
+                              target.chain_name,
+                              target.registry_address,
+                            )}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {shortHash(target.registry_address, 8, 6)}
+                          </a>
+                        ) : (
+                          "Pending"
+                        )
+                      }
+                    />
+                    <TargetRow
+                      label="Tx"
+                      value={
+                        target.tx_hash ? (
+                          <a
+                            className="data-link"
+                            href={chainTxUrl(target.chain_name, target.tx_hash)}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {shortHash(target.tx_hash, 8, 6)}
+                          </a>
+                        ) : target.display_state === "blocked" ? (
+                          snapshot?.blocked_by === "bankai_finality" ? (
+                            "Waiting for finality"
                           ) : (
-                            "Pending"
+                            "Waiting for proof"
                           )
-                        }
-                      />
-                      <TargetRow
-                        label="Tx"
-                        value={
-                          target.tx_hash ? (
-                            <a
-                              className="data-link"
-                              href={chainTxUrl(target.chain_name, target.tx_hash)}
-                              rel="noreferrer"
-                              target="_blank"
-                            >
-                              {shortHash(target.tx_hash, 8, 6)}
-                            </a>
-                          ) : target.display_state === "blocked" ? (
-                            snapshot?.blocked_by === "bankai_finality" ? (
-                              "Waiting for finality"
-                            ) : (
-                              "Waiting for proof"
-                            )
-                          ) : (
-                            "Waiting"
-                          )
-                        }
-                      />
-                    </div>
+                        ) : (
+                          "Waiting"
+                        )
+                      }
+                    />
+                  </div>
 
-                    <p className="target-node__note">
-                      {target.error_message ??
-                        target.blocked_reason ??
-                        fallbackTargetNote(target.display_state)}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            ))}
+                  <p className="target-node__note">
+                    {target.error_message ??
+                      target.blocked_reason ??
+                      fallbackTargetNote(target.display_state)}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            {canScroll && (
+              <>
+                <div
+                  className="target-scroll-fade target-scroll-fade--top"
+                  style={{ opacity: scrollOffset > 0 ? 1 : 0 }}
+                />
+                <div
+                  className="target-scroll-fade target-scroll-fade--bottom"
+                  style={{ opacity: scrollOffset < maxScroll ? 1 : 0 }}
+                />
+              </>
+            )}
           </div>
         </section>
       </section>
@@ -325,82 +482,6 @@ function TargetRow({
   );
 }
 
-function TopologyFlow({
-  active,
-  height,
-  rows,
-}: {
-  active: boolean;
-  height: number;
-  rows: TopologyRow[];
-}) {
-  const width = 520;
-  const hubX = 144;
-  const endX = width - 24;
-  const centerY = height / 2;
-  const rowYs = distributedPositions(height, rows.length);
-
-  return (
-    <div className="flow-zone" style={{ height: `${height}px` } as CSSProperties}>
-      <svg
-        aria-hidden="true"
-        className="flow-zone__svg"
-        preserveAspectRatio="none"
-        viewBox={`0 0 ${width} ${height}`}
-      >
-        <defs>
-          <linearGradient id="topology-flow-gradient" x1="0%" x2="100%" y1="0%" y2="0%">
-            <stop offset="0%" stopColor="white" stopOpacity="0.02" />
-            <stop offset="45%" stopColor="white" stopOpacity="0.48" />
-            <stop offset="100%" stopColor="white" stopOpacity="0.16" />
-          </linearGradient>
-          <marker
-            id="topology-flow-arrow"
-            markerHeight="10"
-            markerWidth="10"
-            orient="auto"
-            refX="8"
-            refY="5"
-          >
-            <path d="M0,0 L10,5 L0,10 Z" fill="white" fillOpacity="0.34" />
-          </marker>
-        </defs>
-
-        <line
-          className={`flow-trunk ${active ? "flow-trunk--active" : ""}`}
-          x1={0}
-          x2={hubX}
-          y1={centerY}
-          y2={centerY}
-        />
-        <circle className="flow-hub" cx={hubX} cy={centerY} r={4.5} />
-
-        {rows.map((row, index) => {
-          const y = rowYs[index];
-          const d = `M ${hubX} ${centerY} C ${hubX + 88} ${centerY}, ${hubX + 142} ${y}, ${endX} ${y}`;
-          const signalClass = flowSignalClass(row.display_state, active);
-
-          return (
-            <g
-              className="flow-branch"
-              key={row.id}
-              style={{ "--flow-delay": `${index * 1.1}s` } as CSSProperties}
-            >
-              <path
-                className="flow-branch__base"
-                d={d}
-                markerEnd="url(#topology-flow-arrow)"
-              />
-              <path className={`flow-branch__signal ${signalClass}`} d={d} />
-              <circle className="flow-branch__node" cx={endX} cy={y} r={3.5} />
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 function buildTargets(
   chains: ChainStatus[],
   snapshot: RootSnapshot | null,
@@ -450,75 +531,6 @@ function buildTargets(
   );
 }
 
-type TopologyRow = {
-  id: string;
-  targets: TopologyTarget[];
-  display_state: TopologyTarget["display_state"];
-};
-
-function buildTargetLayout(targets: TopologyTarget[]) {
-  if (targets.length === 0) {
-    return {
-      columns: 1,
-      rows: [] as TopologyRow[],
-    };
-  }
-
-  const maxRows = 4;
-  const columns = Math.min(3, Math.max(1, Math.ceil(targets.length / maxRows)));
-  const rowCount = Math.ceil(targets.length / columns);
-  const rows = Array.from({ length: rowCount }, (_, rowIndex) => {
-    const rowTargets = targets.slice(rowIndex * columns, (rowIndex + 1) * columns);
-
-    return {
-      id: rowTargets.map((target) => target.chain_name).join(":"),
-      targets: rowTargets,
-      display_state: summarizeRowState(rowTargets),
-    };
-  });
-
-  return {
-    columns,
-    rows,
-  };
-}
-
-function summarizeRowState(targets: TopologyTarget[]): TopologyTarget["display_state"] {
-  if (targets.some((target) => target.display_state === "failed")) {
-    return "failed";
-  }
-
-  if (
-    targets.some((target) =>
-      ["queued", "submitting"].includes(target.display_state),
-    )
-  ) {
-    return "submitting";
-  }
-
-  if (targets.some((target) => target.display_state === "confirmed")) {
-    return "confirmed";
-  }
-
-  if (targets.some((target) => target.display_state === "blocked")) {
-    return "blocked";
-  }
-
-  return "idle";
-}
-
-function distributedPositions(height: number, count: number) {
-  if (count <= 1) {
-    return [height / 2];
-  }
-
-  const top = 54;
-  const bottom = height - 54;
-  const step = (bottom - top) / (count - 1);
-
-  return Array.from({ length: count }, (_, index) => top + step * index);
-}
-
 function flowSignalClass(
   displayState: TopologyTarget["display_state"],
   active: boolean,
@@ -531,15 +543,38 @@ function flowSignalClass(
     return "flow-branch__signal--failed";
   }
 
-  if (displayState === "confirmed") {
-    return "flow-branch__signal--confirmed";
+  return "flow-branch__signal--confirmed";
+}
+
+function buildFlowPath(hubX: number, hubY: number, endX: number, targetY: number) {
+  const deltaY = targetY - hubY;
+
+  if (Math.abs(deltaY) < 1) {
+    return `M ${hubX} ${hubY} L ${endX} ${targetY}`;
   }
 
-  if (displayState === "queued" || displayState === "submitting") {
-    return "flow-branch__signal--fanout";
-  }
+  const direction = deltaY > 0 ? 1 : -1;
+  const spanX = Math.max(1, endX - hubX);
+  const lead = Math.min(56, Math.max(34, spanX * 0.14));
+  const spineX = hubX + lead;
+  const corner = Math.max(
+    4,
+    Math.min(18, Math.abs(deltaY) / 2, (endX - spineX) * 0.14),
+  );
+  const kappa = 0.5522847498;
+  const firstHorizontalX = spineX - corner;
+  const secondHorizontalX = spineX + corner;
+  const firstVerticalY = hubY + direction * corner;
+  const secondVerticalY = targetY - direction * corner;
 
-  return "flow-branch__signal--active";
+  return [
+    `M ${hubX} ${hubY}`,
+    `L ${firstHorizontalX} ${hubY}`,
+    `C ${firstHorizontalX + corner * kappa} ${hubY}, ${spineX} ${hubY + direction * corner * (1 - kappa)}, ${spineX} ${firstVerticalY}`,
+    `L ${spineX} ${secondVerticalY}`,
+    `C ${spineX} ${targetY - direction * corner * (1 - kappa)}, ${secondHorizontalX - corner * kappa} ${targetY}, ${secondHorizontalX} ${targetY}`,
+    `L ${endX} ${targetY}`,
+  ].join(" ");
 }
 
 function targetStatusLabel(

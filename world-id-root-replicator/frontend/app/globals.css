@@ -107,8 +107,10 @@ pre {
 .topology-page {
   display: grid;
   gap: 18px;
+  grid-template-rows: auto 1fr;
   margin: 0 auto;
   max-width: var(--content-width);
+  min-height: calc(100vh - 96px);
 }
 
 .topology-card {
@@ -120,8 +122,9 @@ pre {
   border-radius: 40px;
   box-shadow: var(--shadow);
   display: grid;
-  gap: 28px;
-  padding: 28px 28px 22px;
+  gap: 0;
+  grid-template-rows: 1fr;
+  padding: 28px;
 }
 
 .topology-header {
@@ -168,20 +171,32 @@ pre {
 }
 
 .topology-header__description,
-.source-panel__meta,
-.target-node__note {
+.source-panel__meta {
   color: var(--text-muted);
   font-size: 0.96rem;
   line-height: 1.6;
   margin: 0;
 }
 
+.target-node__note {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .topology-canvas {
-  align-items: center;
   display: grid;
-  gap: 22px;
-  grid-template-columns: minmax(280px, 332px) minmax(240px, 1fr) minmax(320px, 760px);
-  min-height: 640px;
+  gap: 0 22px;
+  grid-template-columns: minmax(260px, 320px) minmax(240px, 380px);
+  height: 100%;
+  min-height: 480px;
+  justify-content: space-between;
+  overflow: hidden;
+  position: relative;
 }
 
 .source-panel,
@@ -325,15 +340,12 @@ pre {
   color: white;
 }
 
-.flow-zone {
-  min-height: 280px;
-  position: relative;
-}
-
-.flow-zone__svg {
-  display: block;
-  height: 100%;
-  width: 100%;
+.flow-overlay {
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
 }
 
 .flow-trunk,
@@ -344,7 +356,7 @@ pre {
 
 .flow-trunk {
   stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 1.2;
+  stroke-width: 1.65;
 }
 
 .flow-trunk--active {
@@ -358,7 +370,7 @@ pre {
 
 .flow-branch__base {
   stroke: rgba(255, 255, 255, 0.12);
-  stroke-width: 1.2;
+  stroke-width: 1.65;
 }
 
 .flow-branch__signal {
@@ -366,7 +378,7 @@ pre {
   animation-delay: var(--flow-delay);
   stroke-dasharray: 16 34;
   stroke-linecap: round;
-  stroke-width: 1.85;
+  stroke-width: 2.35;
 }
 
 .flow-branch__signal--idle {
@@ -394,25 +406,47 @@ pre {
   stroke: var(--danger-line);
 }
 
-.target-lanes {
-  align-content: stretch;
-  display: grid;
-  gap: 22px;
-  grid-template-rows: repeat(var(--target-row-count, 1), minmax(0, 1fr));
+.target-scroll-area {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  overflow: hidden;
+  position: relative;
 }
 
-.target-lane {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(var(--target-columns, 1), minmax(0, 1fr));
+.target-scroll-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  will-change: transform;
+  width: 100%;
+}
+
+.target-scroll-fade {
+  height: 64px;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  transition: opacity 0.22s ease;
+  z-index: 2;
+}
+
+.target-scroll-fade--top {
+  background: linear-gradient(to bottom, rgba(5, 5, 5, 0.88) 0%, transparent 100%);
+  top: 0;
+}
+
+.target-scroll-fade--bottom {
+  background: linear-gradient(to top, rgba(5, 5, 5, 0.88) 0%, transparent 100%);
+  bottom: 0;
 }
 
 .target-node {
   border-radius: var(--radius-lg);
   display: grid;
-  gap: 14px;
-  height: 100%;
-  padding: 18px 18px 16px;
+  gap: 8px;
+  padding: 14px 16px 12px;
 }
 
 .target-node__header {
@@ -529,22 +563,28 @@ pre {
 
   .topology-canvas {
     grid-template-columns: 1fr;
-    min-height: 0;
+    height: auto;
   }
 
-  .flow-zone {
-    height: 220px !important;
-    min-height: 220px;
-    order: 2;
+  .flow-overlay {
+    display: none;
   }
 
   .source-panel {
     order: 1;
   }
 
-  .target-lanes {
-    min-height: 0 !important;
-    order: 3;
+  .target-scroll-area {
+    grid-column: 1;
+    order: 2;
+  }
+
+  .target-scroll-inner {
+    transform: none !important;
+  }
+
+  .target-scroll-fade {
+    display: none;
   }
 }
 
@@ -566,10 +606,6 @@ pre {
   .target-node {
     padding-left: 16px;
     padding-right: 16px;
-  }
-
-  .target-lane {
-    grid-template-columns: 1fr;
   }
 
   .data-row {

@@ -12,6 +12,13 @@ use starknet::{
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, Url},
     signers::{LocalWallet, SigningKey},
 };
+use tokio::time::{timeout, Duration};
+
+const DEFAULT_STARKNET_L1_GAS: u64 = 50_000_000;
+const DEFAULT_STARKNET_L1_GAS_PRICE_WEI: u128 = 1_000_000_000;
+const STARKNET_CHAIN_ID_TIMEOUT: Duration = Duration::from_secs(15);
+const STARKNET_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+const STARKNET_RECEIPT_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub struct StarknetSubmitter {
     destination: DestinationChainConfig,
@@ -29,6 +36,11 @@ impl StarknetSubmitter {
     async fn create_account(
         &self,
     ) -> Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
+        println!(
+            "[starknet] creating account for {} via {}",
+            self.destination.name(),
+            self.destination.rpc_url
+        );
         let provider = JsonRpcClient::new(HttpTransport::new(
             Url::parse(&self.destination.rpc_url).context("parse Starknet RPC URL")?,
         ));
@@ -43,14 +55,18 @@ impl StarknetSubmitter {
             .as_deref()
             .context("missing Starknet account address in config")?;
         let address = Felt::from_hex(account_address).context("parse Starknet account address")?;
-        let chain_id = provider
-            .chain_id()
+        let chain_id = timeout(STARKNET_CHAIN_ID_TIMEOUT, provider.chain_id())
             .await
+            .context("timed out fetching Starknet chain id")?
             .context("fetch Starknet chain id")?;
 
         let mut account =
             SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
         account.set_block_id(BlockId::Tag(BlockTag::Latest));
+        println!(
+            "[starknet] account ready for {} with chain id {chain_id:#x}",
+            self.destination.name()
+        );
         Ok(account)
     }
 
@@ -63,8 +79,17 @@ impl StarknetSubmitter {
     }
 
     fn submit_root_calldata(&self, artifact_path: &str) -> Result<Vec<Felt>> {
+        println!(
+            "[starknet] generating submit_root calldata from {}",
+            artifact_path
+        );
         let proof = starknet_proof_calldata(artifact_path, &self.program_vkey)?;
-        Ok(serialize_felt_array_argument(proof))
+        let calldata = serialize_felt_array_argument(proof);
+        println!(
+            "[starknet] generated calldata with {} felts",
+            calldata.len()
+        );
+        Ok(calldata)
     }
 }
 
@@ -79,11 +104,26 @@ impl SubmissionClient for StarknetSubmitter {
             calldata: self.submit_root_calldata(artifact_path)?,
         };
 
-        let result = account
-            .execute_v3(vec![call])
-            .send()
-            .await
-            .context("send Starknet submit_root transaction")?;
+        println!(
+            "[starknet] broadcasting submit_root to {}",
+            contract_address
+        );
+        let result = timeout(
+            STARKNET_SEND_TIMEOUT,
+            account
+                .execute_v3(vec![call])
+                .l1_gas(DEFAULT_STARKNET_L1_GAS)
+                .l1_gas_price(DEFAULT_STARKNET_L1_GAS_PRICE_WEI)
+                .send(),
+        )
+        .await
+        .context("timed out sending Starknet submit_root transaction")?
+        .context("send Starknet submit_root transaction")?;
+
+        println!(
+            "[starknet] broadcasted transaction {}",
+            self.transaction_hash_hex(result.transaction_hash)
+        );
 
         Ok(self.transaction_hash_hex(result.transaction_hash))
     }
@@ -91,10 +131,13 @@ impl SubmissionClient for StarknetSubmitter {
     async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck> {
         let account = self.create_account().await?;
         let tx_hash_felt = Felt::from_hex(tx_hash).context("parse Starknet tx hash")?;
-        let receipt = match account
-            .provider()
-            .get_transaction_receipt(tx_hash_felt)
-            .await
+        println!("[starknet] checking receipt for {}", tx_hash);
+        let receipt = match timeout(
+            STARKNET_RECEIPT_TIMEOUT,
+            account.provider().get_transaction_receipt(tx_hash_felt),
+        )
+        .await
+        .context("timed out fetching Starknet transaction receipt")?
         {
             Ok(receipt) => receipt,
             Err(ProviderError::StarknetError(StarknetError::TransactionHashNotFound)) => {

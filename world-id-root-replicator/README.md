@@ -57,3 +57,26 @@ To deploy the Starknet Sepolia registry with the values already present in
 cd contracts/starknet
 ./deploy.sh
 ```
+
+To manually submit a stored proof artifact to one configured destination chain,
+run:
+
+```bash
+cargo run -p world-id-root-replicator-backend --bin submit_proof -- \
+  --chain starknet-sepolia \
+  --artifact artifacts/proofs/job-1.bin \
+  --wait
+```
+
+It uses the same env-driven chain configuration as the backend runner. Pass
+`--registry 0x...` to override the configured destination contract for a single
+debugging run.
+
+To run the backend in API-only mode for UI work, use:
+
+```bash
+cargo run -p world-id-root-replicator-backend -- --api-only
+```
+
+This keeps the HTTP API available for the frontend but does not start new
+watching, proving, or replication work.
