@@ -12,3 +12,10 @@ These examples demonstrate end-to-end patterns for common use cases.
 |---------|-------------|
 | [base-balance](./base-balance) | Resolve the latest Base height from Bankai, prove an account balance at that height, and generate a Groth16 proof over the verified result |
 | [world-id-root](./world-id-root) | Read the World ID identity root from Ethereum and produce a Groth16 proof that is verifiable on any chain — no bridges, relays, or destination-side light clients required |
+
+## Research notes
+
+The repository also includes internal notes that capture architectural
+research we may want to revisit.
+
+- [Symbiotic high-level overview](./docs/knowledge-base/symbiotic-high-level-overview.md)

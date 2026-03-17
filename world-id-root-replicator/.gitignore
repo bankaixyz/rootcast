@@ -1,0 +1,32 @@
+# Cargo build
+**/target
+
+# Cargo config
+.cargo
+
+# Profile-guided optimization
+/tmp
+pgo-data.profdata
+
+# MacOS nuisances
+.DS_Store
+
+# Proofs
+**/proof-with-pis.json
+**/proof-with-io.json
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Foundry
+contracts/cache
+contracts/out
+
+# Frontend
+frontend/node_modules
+frontend/.next
+
+# Env
+.env

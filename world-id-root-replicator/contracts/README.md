@@ -1,0 +1,46 @@
+# Contracts
+
+This directory contains the destination-chain verification and storage contract
+for the World ID root replicator.
+
+`WorldIdRootRegistry.sol` verifies SP1 proofs on-chain, decodes the ABI-encoded
+public values, and stores roots keyed by the exact L1 source block number. The
+contract keeps the original `submitRoot(bytes,bytes)` shape, but it now binds
+that call to two immutable constructor values:
+
+- the SP1 verifier contract address
+- the SP1 program verification key for `world-id-root-replicator-program`
+
+## Verifier integration
+
+The contract calls `ISP1Verifier.verifyProof(programVKey, publicValues,
+proofBytes)` before writing any root state. That means a caller no longer needs
+to be a trusted submitter. Any caller can relay a proof, but only a proof that
+matches both the configured verifier and the configured program vkey can update
+state.
+
+For the current SP1 5.2.x workspace, Succinct's official `sp1-contracts`
+deployments publish these current testnet addresses:
+
+- `SP1_VERIFIER_GATEWAY_GROTH16`: `0x397A5f7f3dBd538f23DE225B51f532c34448dA9B`
+- `V5_0_0_SP1_VERIFIER_GROTH16`: `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`
+- `V5_0_0_SP1_VERIFIER_PLONK`: `0x0459d576A6223fEeA177Fb3DF53C9c77BF84C459`
+
+Those addresses are currently listed for Sepolia (`11155111`), Base Sepolia
+(`84532`), OP Sepolia (`11155420`), and Arbitrum Sepolia (`421614`) in
+Succinct's `contracts/deployments/*.json` files. Because this backend submits
+Groth16 proofs, the direct v5 Groth16 verifier is the strictest version-pinned
+option, while the Groth16 gateway is the recommended auto-routing option from
+Succinct's README.
+
+## Program vkey
+
+You can print the current SP1 program vkey from the compiled ELF with this
+command:
+
+```bash
+cargo run -p world-id-root-replicator-backend --bin print_program_vkey
+```
+
+Use that value as the `programVKey` constructor argument when you deploy the
+registry.
