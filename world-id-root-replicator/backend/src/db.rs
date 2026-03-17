@@ -739,6 +739,26 @@ pub async fn mark_job_failed(pool: &SqlitePool, job_id: i64, message: &str) -> R
     Ok(())
 }
 
+pub async fn mark_job_failed_after_retry(
+    pool: &SqlitePool,
+    job_id: i64,
+    message: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE replication_jobs
+        SET state = ?, error_message = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ReplicationJobState::Failed.as_db_str())
+    .bind(message)
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn mark_submission_submitting(
     pool: &SqlitePool,
     submission_id: i64,
@@ -809,6 +829,26 @@ pub async fn mark_submission_failed(
         r#"
         UPDATE chain_submissions
         SET state = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ChainSubmissionState::Failed.as_db_str())
+    .bind(message)
+    .bind(submission_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_submission_failed_after_retry(
+    pool: &SqlitePool,
+    submission_id: i64,
+    message: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE chain_submissions
+        SET state = ?, error_message = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         "#,
     )

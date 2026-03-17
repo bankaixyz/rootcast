@@ -21,10 +21,10 @@ const TARGET_CHAIN_METADATA: Record<
     txBaseUrl: "https://sepolia-optimism.etherscan.io/tx/",
   },
   "starknet-sepolia": {
-    addressBaseUrl: "https://sepolia.starkscan.co/contract/",
+    addressBaseUrl: "https://sepolia.voyager.online/contract",
     label: "Starknet",
     order: 3,
-    txBaseUrl: "https://sepolia.starkscan.co/tx/",
+    txBaseUrl: "https://sepolia.voyager.online/tx/",
   },
 };
 

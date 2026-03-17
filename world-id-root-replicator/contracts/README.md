@@ -103,7 +103,7 @@ Deploy it from the Starknet package directory:
 
 ```bash
 cd starknet
-./deploy.sh --program-vkey 0x...
+./deploy.sh
 ```
 
 The script imports the configured account into `sncast`, declares the Cairo

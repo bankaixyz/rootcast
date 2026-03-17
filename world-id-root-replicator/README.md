@@ -49,3 +49,11 @@ registry contracts across the EVM targets and Starknet Sepolia, plus the Phase
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script
 `contracts/script/deploy_registry.sh`.
+
+To deploy the Starknet Sepolia registry with the values already present in
+`.env`, run:
+
+```bash
+cd contracts/starknet
+./deploy.sh
+```

@@ -37,7 +37,8 @@ export function ReplicationTopology({
   errorMessage,
 }: ReplicationTopologyProps) {
   const targets = buildTargets(chains, snapshot, Boolean(errorMessage));
-  const flowHeight = Math.max(280, 140 + targets.length * 108);
+  const targetLayout = buildTargetLayout(targets);
+  const flowHeight = Math.max(320, 170 + targetLayout.rows.length * 116);
   const sourceState = deriveSourceState(snapshot);
   const finalized = Boolean(snapshot?.bankai_finalized_at);
   const showStageContext = Boolean(errorMessage) || snapshot?.job_state !== "completed";
@@ -146,74 +147,89 @@ export function ReplicationTopology({
           <TopologyFlow
             active={Boolean(snapshot)}
             height={flowHeight}
-            targets={targets}
+            rows={targetLayout.rows}
           />
 
           <div
-            className="target-column"
-            style={{ minHeight: `${flowHeight}px` } as CSSProperties}
+            className="target-lanes"
+            style={
+              {
+                "--target-columns": targetLayout.columns,
+                "--target-row-count": Math.max(1, targetLayout.rows.length),
+                minHeight: `${flowHeight}px`,
+              } as CSSProperties
+            }
           >
-            {targets.map((target) => (
-              <article className="target-node" key={target.chain_name}>
-                <div className="target-node__header">
-                  <div>
-                    <span className="target-node__eyebrow">Target</span>
-                    <h3 className="target-node__title">{chainLabel(target.chain_name)}</h3>
-                  </div>
-                  <span className={`target-state target-state--${target.display_state}`}>
-                    {targetStatusLabel(target.display_state, snapshot)}
-                  </span>
-                </div>
+            {targetLayout.rows.map((row) => (
+              <div className="target-lane" key={row.id}>
+                {row.targets.map((target) => (
+                  <article className="target-node" key={target.chain_name}>
+                    <div className="target-node__header">
+                      <div>
+                        <span className="target-node__eyebrow">Target</span>
+                        <h3 className="target-node__title">
+                          {chainLabel(target.chain_name)}
+                        </h3>
+                      </div>
+                      <span className={`target-state target-state--${target.display_state}`}>
+                        {targetStatusLabel(target.display_state, snapshot)}
+                      </span>
+                    </div>
 
-                <div className="target-node__rows">
-                  <TargetRow
-                    label="Contract"
-                    value={
-                      target.registry_address ? (
-                        <a
-                          className="data-link"
-                          href={chainAddressUrl(target.chain_name, target.registry_address)}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          {shortHash(target.registry_address, 8, 6)}
-                        </a>
-                      ) : (
-                        "Pending"
-                      )
-                    }
-                  />
-                  <TargetRow
-                    label="Tx"
-                    value={
-                      target.tx_hash ? (
-                        <a
-                          className="data-link"
-                          href={chainTxUrl(target.chain_name, target.tx_hash)}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          {shortHash(target.tx_hash, 8, 6)}
-                        </a>
-                      ) : target.display_state === "blocked" ? (
-                        snapshot?.blocked_by === "bankai_finality" ? (
-                          "Waiting for finality"
-                        ) : (
-                          "Waiting for proof"
-                        )
-                      ) : (
-                        "Waiting"
-                      )
-                    }
-                  />
-                </div>
+                    <div className="target-node__rows">
+                      <TargetRow
+                        label="Contract"
+                        value={
+                          target.registry_address ? (
+                            <a
+                              className="data-link"
+                              href={chainAddressUrl(
+                                target.chain_name,
+                                target.registry_address,
+                              )}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {shortHash(target.registry_address, 8, 6)}
+                            </a>
+                          ) : (
+                            "Pending"
+                          )
+                        }
+                      />
+                      <TargetRow
+                        label="Tx"
+                        value={
+                          target.tx_hash ? (
+                            <a
+                              className="data-link"
+                              href={chainTxUrl(target.chain_name, target.tx_hash)}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {shortHash(target.tx_hash, 8, 6)}
+                            </a>
+                          ) : target.display_state === "blocked" ? (
+                            snapshot?.blocked_by === "bankai_finality" ? (
+                              "Waiting for finality"
+                            ) : (
+                              "Waiting for proof"
+                            )
+                          ) : (
+                            "Waiting"
+                          )
+                        }
+                      />
+                    </div>
 
-                <p className="target-node__note">
-                  {target.error_message ??
-                    target.blocked_reason ??
-                    fallbackTargetNote(target.display_state)}
-                </p>
-              </article>
+                    <p className="target-node__note">
+                      {target.error_message ??
+                        target.blocked_reason ??
+                        fallbackTargetNote(target.display_state)}
+                    </p>
+                  </article>
+                ))}
+              </div>
             ))}
           </div>
         </section>
@@ -312,17 +328,17 @@ function TargetRow({
 function TopologyFlow({
   active,
   height,
-  targets,
+  rows,
 }: {
   active: boolean;
   height: number;
-  targets: TopologyTarget[];
+  rows: TopologyRow[];
 }) {
   const width = 520;
   const hubX = 144;
   const endX = width - 24;
   const centerY = height / 2;
-  const targetYs = distributedPositions(height, targets.length);
+  const rowYs = distributedPositions(height, rows.length);
 
   return (
     <div className="flow-zone" style={{ height: `${height}px` } as CSSProperties}>
@@ -359,15 +375,15 @@ function TopologyFlow({
         />
         <circle className="flow-hub" cx={hubX} cy={centerY} r={4.5} />
 
-        {targets.map((target, index) => {
-          const y = targetYs[index];
+        {rows.map((row, index) => {
+          const y = rowYs[index];
           const d = `M ${hubX} ${centerY} C ${hubX + 88} ${centerY}, ${hubX + 142} ${y}, ${endX} ${y}`;
-          const signalClass = flowSignalClass(target.display_state, active);
+          const signalClass = flowSignalClass(row.display_state, active);
 
           return (
             <g
               className="flow-branch"
-              key={target.chain_name}
+              key={row.id}
               style={{ "--flow-delay": `${index * 1.1}s` } as CSSProperties}
             >
               <path
@@ -432,6 +448,63 @@ function buildTargets(
   return [...merged.values()].sort(
     (left, right) => chainOrder(left.chain_name) - chainOrder(right.chain_name),
   );
+}
+
+type TopologyRow = {
+  id: string;
+  targets: TopologyTarget[];
+  display_state: TopologyTarget["display_state"];
+};
+
+function buildTargetLayout(targets: TopologyTarget[]) {
+  if (targets.length === 0) {
+    return {
+      columns: 1,
+      rows: [] as TopologyRow[],
+    };
+  }
+
+  const maxRows = 4;
+  const columns = Math.min(3, Math.max(1, Math.ceil(targets.length / maxRows)));
+  const rowCount = Math.ceil(targets.length / columns);
+  const rows = Array.from({ length: rowCount }, (_, rowIndex) => {
+    const rowTargets = targets.slice(rowIndex * columns, (rowIndex + 1) * columns);
+
+    return {
+      id: rowTargets.map((target) => target.chain_name).join(":"),
+      targets: rowTargets,
+      display_state: summarizeRowState(rowTargets),
+    };
+  });
+
+  return {
+    columns,
+    rows,
+  };
+}
+
+function summarizeRowState(targets: TopologyTarget[]): TopologyTarget["display_state"] {
+  if (targets.some((target) => target.display_state === "failed")) {
+    return "failed";
+  }
+
+  if (
+    targets.some((target) =>
+      ["queued", "submitting"].includes(target.display_state),
+    )
+  ) {
+    return "submitting";
+  }
+
+  if (targets.some((target) => target.display_state === "confirmed")) {
+    return "confirmed";
+  }
+
+  if (targets.some((target) => target.display_state === "blocked")) {
+    return "blocked";
+  }
+
+  return "idle";
 }
 
 function distributedPositions(height: number, count: number) {

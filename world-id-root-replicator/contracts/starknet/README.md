@@ -24,14 +24,20 @@ asdf plugin add starknet-foundry
 asdf install
 ```
 
-Or install `scarb`, `sncast`, and `snforge` however you manage local tooling.
+This repo is pinned to:
+
+- `scarb 2.16.1`
+- `starknet-foundry 0.57.0`
+
+Or install `scarb`, `sncast`, and `snforge` however you manage local tooling,
+but keep those versions aligned.
 
 ## Environment
 
 The deploy script reads the repo root `.env` file and expects:
 
 ```bash
-STARKNET_SEPOLIA_RPC_URL=https://starknet-sepolia.public.blastapi.io/rpc/v0_9
+STARKNET_SEPOLIA_RPC_URL=https://rpc.starknet-testnet.lava.build/rpc/v0_10
 STARKNET_SEPOLIA_PRIVATE_KEY=0x...
 STARKNET_SEPOLIA_ACCOUNT_ADDRESS=0x...
 WORLD_ID_ROOT_REPLICATOR_PROGRAM_VKEY=0x...
@@ -59,9 +65,13 @@ snforge test
 ## Deploy
 
 ```bash
-./deploy.sh --program-vkey 0x...
+./deploy.sh
 ```
 
+Because the script reads the repo root `.env`, this command is enough if you
+already set `PROGRAM_VKEY`, `STARKNET_SEPOLIA_RPC_URL`,
+`STARKNET_SEPOLIA_PRIVATE_KEY`, and `STARKNET_SEPOLIA_ACCOUNT_ADDRESS`.
+
 On the first run the script imports the OpenZeppelin account into `sncast`,
-declares `WorldIdRootRegistry`, deploys it with the supplied program vkey, and
-prints the `STARKNET_SEPOLIA_REGISTRY_ADDRESS=...` line to add to `.env`.
+declares `WorldIdRootRegistry`, deploys it, and prints the
+`STARKNET_SEPOLIA_REGISTRY_ADDRESS=...` line to add to `.env`.

@@ -11,7 +11,9 @@ pub trait IWorldIdRootRegistry<TContractState> {
 
 #[starknet::contract]
 pub mod WorldIdRootRegistry {
-    use starknet::storage::{Map, StoragePointerReadAccess, StoragePointerWriteAccess};
+    use starknet::storage::{
+        Map, StoragePathEntry, StoragePointerReadAccess, StoragePointerWriteAccess,
+    };
     use starknet::syscalls::library_call_syscall;
     use starknet::SyscallResultTrait;
 

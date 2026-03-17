@@ -19,6 +19,8 @@ use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(5);
+const MAX_JOB_RPC_FAILURES: u32 = 5;
+const MAX_SUBMISSION_RPC_FAILURES: u32 = 5;
 
 pub struct Runner {
     pool: SqlitePool,
@@ -139,9 +141,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch Bankai finality"
                 );
-                db::mark_job_retryable(
-                    &self.pool,
-                    job.job_id,
+                self.mark_job_retryable_or_failed(
+                    &job,
                     ReplicationJobState::WaitingFinality,
                     &error.to_string(),
                 )
@@ -206,9 +207,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch exact Bankai proof bundle"
                 );
-                db::mark_job_retryable(
-                    &self.pool,
-                    job.job_id,
+                self.mark_job_retryable_or_failed(
+                    &job,
                     ReplicationJobState::ReadyToProve,
                     &error.to_string(),
                 )
@@ -255,9 +255,8 @@ impl Runner {
                 if next_state == ReplicationJobState::Failed {
                     db::mark_job_failed(&self.pool, job.job_id, &error.to_string()).await?;
                 } else {
-                    db::mark_job_retryable(
-                        &self.pool,
-                        job.job_id,
+                    self.mark_job_retryable_or_failed(
+                        &job,
                         ReplicationJobState::ReadyToProve,
                         &error.to_string(),
                     )
@@ -288,9 +287,8 @@ impl Runner {
         }
 
         let Some(artifact_path) = job.proof_artifact_ref.as_deref() else {
-            db::mark_job_retryable(
-                &self.pool,
-                job.job_id,
+            self.mark_job_retryable_or_failed(
+                &job,
                 ReplicationJobState::ReadyToProve,
                 "missing proof artifact ref for submission",
             )
@@ -369,9 +367,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to submit proof"
                 );
-                db::mark_submission_retryable(
-                    &self.pool,
-                    submission.submission_id,
+                self.mark_submission_retryable_or_failed(
+                    submission,
                     ChainSubmissionState::Pending,
                     &error.to_string(),
                 )
@@ -388,9 +385,8 @@ impl Runner {
         submission: &ChainSubmission,
     ) -> Result<()> {
         let Some(tx_hash) = submission.submission_tx_hash.as_deref() else {
-            db::mark_submission_retryable(
-                &self.pool,
-                submission.submission_id,
+            self.mark_submission_retryable_or_failed(
+                submission,
                 ChainSubmissionState::Pending,
                 "submission entered submitting state without a transaction hash",
             )
@@ -423,9 +419,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to confirm submission"
                 );
-                db::mark_submission_retryable(
-                    &self.pool,
-                    submission.submission_id,
+                self.mark_submission_retryable_or_failed(
+                    submission,
                     ChainSubmissionState::Submitting,
                     &error.to_string(),
                 )
@@ -499,12 +494,54 @@ impl Runner {
             .cloned()
             .with_context(|| format!("missing submission client for {chain_name}"))
     }
+
+    async fn mark_job_retryable_or_failed(
+        &self,
+        job: &ActiveJob,
+        state: ReplicationJobState,
+        message: &str,
+    ) -> Result<()> {
+        if job.job_retry_count + 1 >= MAX_JOB_RPC_FAILURES {
+            db::mark_job_failed_after_retry(
+                &self.pool,
+                job.job_id,
+                &retry_limit_message(MAX_JOB_RPC_FAILURES, message),
+            )
+            .await?;
+            return Ok(());
+        }
+
+        db::mark_job_retryable(&self.pool, job.job_id, state, message).await
+    }
+
+    async fn mark_submission_retryable_or_failed(
+        &self,
+        submission: &ChainSubmission,
+        state: ChainSubmissionState,
+        message: &str,
+    ) -> Result<()> {
+        if submission.submission_retry_count + 1 >= MAX_SUBMISSION_RPC_FAILURES {
+            db::mark_submission_failed_after_retry(
+                &self.pool,
+                submission.submission_id,
+                &retry_limit_message(MAX_SUBMISSION_RPC_FAILURES, message),
+            )
+            .await?;
+            return Ok(());
+        }
+
+        db::mark_submission_retryable(&self.pool, submission.submission_id, state, message).await
+    }
 }
 
 fn is_terminal_proving_error(error: &anyhow::Error) -> bool {
     error
         .to_string()
         .contains("decoded proof public values do not match observed root")
+}
+
+fn retry_limit_message(limit: u32, message: &str) -> String {
+    format!("retry limit reached after {limit} failed attempts: {message}")
 }
 
 #[cfg(test)]
@@ -756,6 +793,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runner_marks_job_failed_after_too_many_rpc_failures() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [3u8; 32], 55, "0xbbb").await;
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(NoopWatcher),
+            Arc::new(FailingFinalityClient),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        for _ in 0..MAX_JOB_RPC_FAILURES {
+            runner.advance_once().await.unwrap();
+        }
+
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
+
+        let snapshot = db::job_snapshot(&pool, 1).await.unwrap().unwrap();
+        assert_eq!(snapshot.job_state, ReplicationJobState::Failed);
+        assert_eq!(snapshot.job_retry_count, MAX_JOB_RPC_FAILURES);
+        assert_eq!(
+            snapshot.job_error_message.as_deref(),
+            Some("retry limit reached after 5 failed attempts: bankai finality unavailable")
+        );
+    }
+
+    #[tokio::test]
     async fn runner_proves_once_and_fans_out_to_all_chains() {
         let pool = test_pool().await;
         let destinations = all_destinations();
@@ -903,6 +973,57 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn submission_marks_chain_failed_after_too_many_rpc_failures() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: Some("base transport error".to_string()),
+            check_results: Mutex::new(vec![]),
+        });
+        let submission_clients =
+            HashMap::from([("base-sepolia", base.clone() as Arc<dyn SubmissionClient>)]);
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            submission_clients,
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        for _ in 0..MAX_SUBMISSION_RPC_FAILURES {
+            runner.advance_once().await.unwrap();
+        }
+
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
+
+        let snapshot = db::job_snapshot(&pool, 1).await.unwrap().unwrap();
+        assert_eq!(snapshot.job_state, ReplicationJobState::Failed);
+
+        let submissions = db::job_submissions(&pool, 1).await.unwrap();
+        let submission = submissions.first().unwrap();
+        assert_eq!(submission.submission_state, ChainSubmissionState::Failed);
+        assert_eq!(
+            submission.submission_retry_count,
+            MAX_SUBMISSION_RPC_FAILURES
+        );
+        assert_eq!(
+            submission.submission_error_message.as_deref(),
+            Some("retry limit reached after 5 failed attempts: base transport error")
+        );
     }
 
     #[tokio::test]

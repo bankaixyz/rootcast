@@ -61,6 +61,11 @@ impl StarknetSubmitter {
     fn transaction_hash_hex(&self, tx_hash: Felt) -> String {
         format!("{:#064x}", tx_hash)
     }
+
+    fn submit_root_calldata(&self, artifact_path: &str) -> Result<Vec<Felt>> {
+        let proof = starknet_proof_calldata(artifact_path, &self.program_vkey)?;
+        Ok(serialize_felt_array_argument(proof))
+    }
 }
 
 #[async_trait]
@@ -71,7 +76,7 @@ impl SubmissionClient for StarknetSubmitter {
             to: self.contract_address(contract_address)?,
             selector: get_selector_from_name("submit_root")
                 .context("resolve Starknet submit_root selector")?,
-            calldata: starknet_proof_calldata(artifact_path, &self.program_vkey)?,
+            calldata: self.submit_root_calldata(artifact_path)?,
         };
 
         let result = account
@@ -107,5 +112,25 @@ impl SubmissionClient for StarknetSubmitter {
                 "starknet transaction {tx_hash} reverted: {reason}"
             ))),
         }
+    }
+}
+
+fn serialize_felt_array_argument(values: Vec<Felt>) -> Vec<Felt> {
+    let mut calldata = Vec::with_capacity(values.len() + 1);
+    calldata.push(Felt::from(values.len()));
+    calldata.extend(values);
+    calldata
+}
+
+#[cfg(test)]
+mod tests {
+    use super::serialize_felt_array_argument;
+    use starknet::core::types::Felt;
+
+    #[test]
+    fn serializes_felt_array_argument_with_length_prefix() {
+        let calldata = serialize_felt_array_argument(vec![Felt::ONE, Felt::TWO]);
+
+        assert_eq!(calldata, vec![Felt::from(2_u64), Felt::ONE, Felt::TWO]);
     }
 }
