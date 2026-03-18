@@ -28,10 +28,13 @@ deployments publish these current testnet addresses:
 
 Those addresses are currently listed for Sepolia (`11155111`), Base Sepolia
 (`84532`), OP Sepolia (`11155420`), and Arbitrum Sepolia (`421614`) in
-Succinct's `contracts/deployments/*.json` files. Because this backend submits
-Groth16 proofs, the direct v5 Groth16 verifier is the strictest version-pinned
-option, while the Groth16 gateway is the recommended auto-routing option from
-Succinct's README.
+Succinct's `contracts/deployments/*.json` files. Chiado (`10200`), Monad
+Testnet (`10143`), HyperEVM Testnet (`998`), Tempo Testnet (`42431`), MegaETH
+Testnet (`6343`), and Plasma Testnet (`9746`) are not currently listed there,
+so this repository only uses explicit verifier addresses for those networks.
+Because this backend submits Groth16 proofs, the direct v5 Groth16 verifier is
+the strictest version-pinned option on the supported testnets above, while the
+Groth16 gateway is the recommended auto-routing option from Succinct's README.
 
 ## Program vkey
 
@@ -48,7 +51,8 @@ registry.
 ## Deployment
 
 Use the deploy helper from the `contracts/` directory. It now supports Base
-Sepolia, OP Sepolia, and Arbitrum Sepolia through one script.
+Sepolia, OP Sepolia, Arbitrum Sepolia, Gnosis Chiado, Monad Testnet, HyperEVM
+Testnet, Tempo Testnet, MegaETH Testnet, and Plasma Testnet through one script.
 
 ```bash
 ./script/deploy_registry.sh --chain base
@@ -56,9 +60,21 @@ Sepolia, OP Sepolia, and Arbitrum Sepolia through one script.
 
 The script loads `../.env`, selects the chain-specific `*_RPC_URL`,
 `*_PRIVATE_KEY`, and `*_REGISTRY_ADDRESS` variables for the requested chain,
-defaults the verifier to the direct SP1 v5 Groth16 verifier
-`0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5`, and reads the program vkey from
-`PROGRAM_VKEY`.
+reads the program vkey from `PROGRAM_VKEY`, and defaults the verifier to the
+direct SP1 v5 Groth16 verifier `0x50ACFBEdecf4cbe350E1a86fC6f03a821772f1e5` on
+Base Sepolia, OP Sepolia, and Arbitrum Sepolia.
+
+For Chiado, the script requires an explicit verifier address because Succinct's
+published deployment list does not currently include chain `10200`. Provide it
+with `--verifier`, `CHIADO_SP1_VERIFIER_ADDRESS`, or `SP1_VERIFIER_ADDRESS`.
+
+For Monad Testnet, the script defaults to the pinned deployed verifier
+`0x9e630e6A6BFbcF1b1c213552Aaea5469ff5C9664`. You can still override it with
+`--verifier`, `MONAD_TESTNET_SP1_VERIFIER_ADDRESS`, or `SP1_VERIFIER_ADDRESS`.
+
+HyperEVM, Tempo, MegaETH, and Plasma Testnet use the same pinned verifier by
+default and can each override it with their matching `*_SP1_VERIFIER_ADDRESS`
+env var or `--verifier`.
 
 If `PROGRAM_VKEY` is missing, the script stops and shows the command you need
 to run to generate it:
@@ -76,6 +92,31 @@ If you want to override either constructor argument, pass them explicitly:
   --program-vkey 0x...
 ```
 
+Chiado example:
+
+```bash
+./script/deploy_registry.sh \
+  --chain chiado \
+  --verifier 0x... \
+  --program-vkey 0x...
+```
+
+Monad example:
+
+```bash
+./script/deploy_registry.sh \
+  --chain monad \
+  --program-vkey 0x...
+```
+
+HyperEVM example:
+
+```bash
+./script/deploy_registry.sh \
+  --chain hyperevm \
+  --program-vkey 0x...
+```
+
 The script prints the deployed contract address and the exact
 `*_REGISTRY_ADDRESS=...` line to copy into `../.env`.
 
@@ -90,7 +131,10 @@ To deploy and verify in one step, pass `--verify` and ensure
 
 The script submits verification to the correct explorer for the selected chain
 using the pinned compiler version, optimizer runs, and ABI-encoded constructor
-arguments.
+arguments. Etherscan-style verification is used on Base/OP/Arbitrum Sepolia,
+while Chiado uses Blockscout. Monad, HyperEVM, Tempo, MegaETH, and Plasma
+deploys are supported, but explorer verification is not wired into the helper
+yet and should be handled manually.
 
 ## Current Base Sepolia deployment
 

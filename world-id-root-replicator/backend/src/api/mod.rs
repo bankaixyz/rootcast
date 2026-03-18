@@ -160,6 +160,7 @@ mod tests {
     async fn latest_root_blocks_targets_while_waiting_for_finality() {
         let pool = test_pool().await;
         let destinations = all_destinations();
+        let expected_target_count = destinations.len();
         record_root(&pool, &destinations, [7u8; 32], 12_345, "0xfeed").await;
 
         let app = router(pool, destinations);
@@ -185,7 +186,7 @@ mod tests {
         assert_eq!(snapshot["replication_triggered"], false);
 
         let targets = snapshot["targets"].as_array().unwrap();
-        assert_eq!(targets.len(), 3);
+        assert_eq!(targets.len(), expected_target_count);
         assert!(targets
             .iter()
             .all(|target| target["display_state"] == "blocked"));
@@ -283,10 +284,43 @@ mod tests {
         let json: Value = serde_json::from_slice(&body).unwrap();
         let chains = json["chains"].as_array().unwrap();
 
-        assert_eq!(chains[0]["display_state"], "confirmed");
-        assert_eq!(chains[1]["display_state"], "failed");
-        assert_eq!(chains[1]["error_message"], "op revert");
-        assert_eq!(chains[2]["display_state"], "submitting");
+        assert_eq!(
+            chain_by_name(chains, "base-sepolia")["display_state"],
+            "confirmed"
+        );
+        assert_eq!(
+            chain_by_name(chains, "op-sepolia")["display_state"],
+            "failed"
+        );
+        assert_eq!(
+            chain_by_name(chains, "op-sepolia")["error_message"],
+            "op revert"
+        );
+        assert_eq!(
+            chain_by_name(chains, "arbitrum-sepolia")["display_state"],
+            "submitting"
+        );
+        assert_eq!(chain_by_name(chains, "chiado")["display_state"], "queued");
+        assert_eq!(
+            chain_by_name(chains, "monad-testnet")["display_state"],
+            "queued"
+        );
+        assert_eq!(
+            chain_by_name(chains, "hyperevm-testnet")["display_state"],
+            "queued"
+        );
+        assert_eq!(
+            chain_by_name(chains, "tempo-testnet")["display_state"],
+            "queued"
+        );
+        assert_eq!(
+            chain_by_name(chains, "megaeth-testnet")["display_state"],
+            "queued"
+        );
+        assert_eq!(
+            chain_by_name(chains, "plasma-testnet")["display_state"],
+            "queued"
+        );
     }
 
     async fn test_pool() -> SqlitePool {
@@ -331,6 +365,12 @@ mod tests {
             destination(DestinationChain::BaseSepolia),
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
+            destination(DestinationChain::Chiado),
+            destination(DestinationChain::MonadTestnet),
+            destination(DestinationChain::HyperEvmTestnet),
+            destination(DestinationChain::TempoTestnet),
+            destination(DestinationChain::MegaEthTestnet),
+            destination(DestinationChain::PlasmaTestnet),
         ]
     }
 
@@ -339,6 +379,12 @@ mod tests {
             DestinationChain::BaseSepolia => "0123",
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
+            DestinationChain::Chiado => "1020",
+            DestinationChain::MonadTestnet => "1143",
+            DestinationChain::HyperEvmTestnet => "0998",
+            DestinationChain::TempoTestnet => "2431",
+            DestinationChain::MegaEthTestnet => "6343",
+            DestinationChain::PlasmaTestnet => "9746",
         };
 
         DestinationChainConfig {
@@ -349,5 +395,12 @@ mod tests {
                 .unwrap(),
             private_key: "0x01".to_string(),
         }
+    }
+
+    fn chain_by_name<'a>(chains: &'a [Value], chain_name: &str) -> &'a Value {
+        chains
+            .iter()
+            .find(|chain| chain["chain_name"] == chain_name)
+            .unwrap()
     }
 }

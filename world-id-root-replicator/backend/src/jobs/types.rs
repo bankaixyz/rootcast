@@ -34,6 +34,12 @@ pub enum DestinationChain {
     BaseSepolia,
     OpSepolia,
     ArbitrumSepolia,
+    Chiado,
+    MonadTestnet,
+    HyperEvmTestnet,
+    TempoTestnet,
+    MegaEthTestnet,
+    PlasmaTestnet,
 }
 
 impl DestinationChain {
@@ -42,6 +48,12 @@ impl DestinationChain {
             Self::BaseSepolia => 84_532,
             Self::OpSepolia => 11_155_420,
             Self::ArbitrumSepolia => 421_614,
+            Self::Chiado => 10_200,
+            Self::MonadTestnet => 10_143,
+            Self::HyperEvmTestnet => 998,
+            Self::TempoTestnet => 42_431,
+            Self::MegaEthTestnet => 6_343,
+            Self::PlasmaTestnet => 9_746,
         }
     }
 
@@ -50,6 +62,12 @@ impl DestinationChain {
             Self::BaseSepolia => "base-sepolia",
             Self::OpSepolia => "op-sepolia",
             Self::ArbitrumSepolia => "arbitrum-sepolia",
+            Self::Chiado => "chiado",
+            Self::MonadTestnet => "monad-testnet",
+            Self::HyperEvmTestnet => "hyperevm-testnet",
+            Self::TempoTestnet => "tempo-testnet",
+            Self::MegaEthTestnet => "megaeth-testnet",
+            Self::PlasmaTestnet => "plasma-testnet",
         }
     }
 
@@ -58,6 +76,12 @@ impl DestinationChain {
             Self::BaseSepolia => "BASE_SEPOLIA",
             Self::OpSepolia => "OP_SEPOLIA",
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
+            Self::Chiado => "CHIADO",
+            Self::MonadTestnet => "MONAD_TESTNET",
+            Self::HyperEvmTestnet => "HYPEREVM_TESTNET",
+            Self::TempoTestnet => "TEMPO_TESTNET",
+            Self::MegaEthTestnet => "MEGAETH_TESTNET",
+            Self::PlasmaTestnet => "PLASMA_TESTNET",
         }
     }
 }

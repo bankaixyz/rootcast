@@ -689,7 +689,7 @@ mod tests {
         assert!(!created_again.created);
         assert_eq!(observed_root_count, 1);
         assert_eq!(job_count, 1);
-        assert_eq!(submission_count, 3);
+        assert_eq!(submission_count, destinations.len() as i64);
     }
 
     #[tokio::test]
@@ -775,10 +775,46 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let chiado = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let monad = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let hyperevm = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let tempo = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let megaeth = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let plasma = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
+            ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
+            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
+            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
+            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
@@ -814,6 +850,12 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(chiado.submitted.lock().unwrap().len(), 1);
+        assert_eq!(monad.submitted.lock().unwrap().len(), 1);
+        assert_eq!(hyperevm.submitted.lock().unwrap().len(), 1);
+        assert_eq!(tempo.submitted.lock().unwrap().len(), 1);
+        assert_eq!(megaeth.submitted.lock().unwrap().len(), 1);
+        assert_eq!(plasma.submitted.lock().unwrap().len(), 1);
 
         runner.advance_once().await.unwrap();
         assert!(db::next_active_job(&pool).await.unwrap().is_none());
@@ -841,10 +883,46 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let chiado = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let monad = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let hyperevm = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let tempo = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let megaeth = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let plasma = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
+            ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
+            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
+            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
+            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -876,8 +954,38 @@ mod tests {
             submission_state(&submissions, "arbitrum-sepolia"),
             ChainSubmissionState::Submitting
         );
+        assert_eq!(
+            submission_state(&submissions, "chiado"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "monad-testnet"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "hyperevm-testnet"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "tempo-testnet"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "megaeth-testnet"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
+            submission_state(&submissions, "plasma-testnet"),
+            ChainSubmissionState::Submitting
+        );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(chiado.submitted.lock().unwrap().len(), 1);
+        assert_eq!(monad.submitted.lock().unwrap().len(), 1);
+        assert_eq!(hyperevm.submitted.lock().unwrap().len(), 1);
+        assert_eq!(tempo.submitted.lock().unwrap().len(), 1);
+        assert_eq!(megaeth.submitted.lock().unwrap().len(), 1);
+        assert_eq!(plasma.submitted.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -901,10 +1009,46 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let chiado = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let monad = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let hyperevm = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let tempo = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let megaeth = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
+        let plasma = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
+            ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
+            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
+            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
+            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -946,9 +1090,39 @@ mod tests {
             submission_state(&submissions, "arbitrum-sepolia"),
             ChainSubmissionState::Confirmed
         );
+        assert_eq!(
+            submission_state(&submissions, "chiado"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "monad-testnet"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "hyperevm-testnet"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "tempo-testnet"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "megaeth-testnet"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
+            submission_state(&submissions, "plasma-testnet"),
+            ChainSubmissionState::Confirmed
+        );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(chiado.submitted.lock().unwrap().len(), 1);
+        assert_eq!(monad.submitted.lock().unwrap().len(), 1);
+        assert_eq!(hyperevm.submitted.lock().unwrap().len(), 1);
+        assert_eq!(tempo.submitted.lock().unwrap().len(), 1);
+        assert_eq!(megaeth.submitted.lock().unwrap().len(), 1);
+        assert_eq!(plasma.submitted.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -972,10 +1146,46 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
         });
+        let chiado = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let monad = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let hyperevm = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let tempo = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let megaeth = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let plasma = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
+            ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
+            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
+            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
+            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
@@ -999,6 +1209,12 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(chiado.submitted.lock().unwrap().len(), 1);
+        assert_eq!(monad.submitted.lock().unwrap().len(), 1);
+        assert_eq!(hyperevm.submitted.lock().unwrap().len(), 1);
+        assert_eq!(tempo.submitted.lock().unwrap().len(), 1);
+        assert_eq!(megaeth.submitted.lock().unwrap().len(), 1);
+        assert_eq!(plasma.submitted.lock().unwrap().len(), 1);
 
         let restarted = Runner::new_for_tests(
             pool.clone(),
@@ -1015,6 +1231,12 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(chiado.submitted.lock().unwrap().len(), 1);
+        assert_eq!(monad.submitted.lock().unwrap().len(), 1);
+        assert_eq!(hyperevm.submitted.lock().unwrap().len(), 1);
+        assert_eq!(tempo.submitted.lock().unwrap().len(), 1);
+        assert_eq!(megaeth.submitted.lock().unwrap().len(), 1);
+        assert_eq!(plasma.submitted.lock().unwrap().len(), 1);
         assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
     }
 
@@ -1165,6 +1387,12 @@ mod tests {
             destination(DestinationChain::BaseSepolia),
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
+            destination(DestinationChain::Chiado),
+            destination(DestinationChain::MonadTestnet),
+            destination(DestinationChain::HyperEvmTestnet),
+            destination(DestinationChain::TempoTestnet),
+            destination(DestinationChain::MegaEthTestnet),
+            destination(DestinationChain::PlasmaTestnet),
         ]
     }
 
@@ -1173,6 +1401,12 @@ mod tests {
             DestinationChain::BaseSepolia => "0123",
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
+            DestinationChain::Chiado => "1020",
+            DestinationChain::MonadTestnet => "1143",
+            DestinationChain::HyperEvmTestnet => "0998",
+            DestinationChain::TempoTestnet => "2431",
+            DestinationChain::MegaEthTestnet => "6343",
+            DestinationChain::PlasmaTestnet => "9746",
         };
 
         DestinationChainConfig {
