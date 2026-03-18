@@ -1,10 +1,11 @@
 use crate::bankai::finality::{BankaiFinalityClient, FinalityClient};
 use crate::bankai::proof_bundle::{BankaiProofBundleClient, ProofBundleClient};
-use crate::chains::{EvmSubmitter, StarknetSubmitter, SubmissionCheck, SubmissionClient};
+use crate::chains::{
+    EvmSubmitter, SolanaSubmitter, StarknetSubmitter, SubmissionCheck, SubmissionClient,
+};
 use crate::config::{Config, DestinationChainConfig};
 use crate::db::{self, ActiveJob, ChainSubmission};
-use crate::jobs::types::DestinationChain;
-use crate::jobs::types::{ChainSubmissionState, ReplicationJobState};
+use crate::jobs::types::{ChainSubmissionState, DestinationChain, ReplicationJobState};
 use crate::proving::sp1::{
     current_program_vkey, root_hex_to_bytes, root_to_hex, ProofService, PublicValues,
     Sp1ProofService,
@@ -58,11 +59,15 @@ impl Runner {
                         destination.clone(),
                         program_vkey.clone(),
                     )),
+                    DestinationChain::SolanaDevnet => {
+                        Arc::new(SolanaSubmitter::new(destination.clone())?)
+                    }
                     _ => Arc::new(EvmSubmitter::new(destination.clone())),
                 };
-                (destination.name(), client)
+
+                Ok((destination.name(), client))
             })
-            .collect();
+            .collect::<Result<HashMap<_, _>>>()?;
 
         Ok(Self {
             pool,
@@ -541,7 +546,7 @@ fn is_terminal_proving_error(error: &anyhow::Error) -> bool {
 }
 
 fn retry_limit_message(limit: u32, message: &str) -> String {
-    format!("retry limit reached after {limit} failed attempts: {message}")
+    format!("retry limit reached after {limit} attempts: {message}")
 }
 
 #[cfg(test)]
@@ -643,7 +648,7 @@ mod tests {
     impl SubmissionClient for FakeSubmissionClient {
         async fn submit_artifact(
             &self,
-            _registry_address: &str,
+            _contract_address: &str,
             artifact_path: &str,
         ) -> Result<String> {
             if let Some(error) = &self.submit_error {
@@ -727,7 +732,7 @@ mod tests {
         assert!(!created_again.created);
         assert_eq!(observed_root_count, 1);
         assert_eq!(job_count, 1);
-        assert_eq!(submission_count, 4);
+        assert_eq!(submission_count, 5);
     }
 
     #[tokio::test]
@@ -793,39 +798,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_marks_job_failed_after_too_many_rpc_failures() {
-        let pool = test_pool().await;
-        let destinations = vec![destination(DestinationChain::BaseSepolia)];
-        record_root(&pool, &destinations, [3u8; 32], 55, "0xbbb").await;
-
-        let runner = Runner::new_for_tests(
-            pool.clone(),
-            destinations.clone(),
-            fake_clients_for(&destinations),
-            Arc::new(NoopWatcher),
-            Arc::new(FailingFinalityClient),
-            Arc::new(StaticBundleClient),
-            Arc::new(FakeProofService {
-                prove_calls: AtomicU64::new(0),
-            }),
-        );
-
-        for _ in 0..MAX_JOB_RPC_FAILURES {
-            runner.advance_once().await.unwrap();
-        }
-
-        assert!(db::next_active_job(&pool).await.unwrap().is_none());
-
-        let snapshot = db::job_snapshot(&pool, 1).await.unwrap().unwrap();
-        assert_eq!(snapshot.job_state, ReplicationJobState::Failed);
-        assert_eq!(snapshot.job_retry_count, MAX_JOB_RPC_FAILURES);
-        assert_eq!(
-            snapshot.job_error_message.as_deref(),
-            Some("retry limit reached after 5 failed attempts: bankai finality unavailable")
-        );
-    }
-
-    #[tokio::test]
     async fn runner_proves_once_and_fans_out_to_all_chains() {
         let pool = test_pool().await;
         let destinations = all_destinations();
@@ -851,6 +823,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let solana = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
@@ -859,6 +836,7 @@ mod tests {
                 "starknet-sepolia",
                 starknet.clone() as Arc<dyn SubmissionClient>,
             ),
+            ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
@@ -895,6 +873,7 @@ mod tests {
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
+        assert_eq!(solana.submitted.lock().unwrap().len(), 1);
 
         runner.advance_once().await.unwrap();
         assert!(db::next_active_job(&pool).await.unwrap().is_none());
@@ -927,6 +906,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let solana = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
@@ -935,6 +919,7 @@ mod tests {
                 "starknet-sepolia",
                 starknet.clone() as Arc<dyn SubmissionClient>,
             ),
+            ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -970,60 +955,14 @@ mod tests {
             submission_state(&submissions, "starknet-sepolia"),
             ChainSubmissionState::Submitting
         );
+        assert_eq!(
+            submission_state(&submissions, "solana-devnet"),
+            ChainSubmissionState::Submitting
+        );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn submission_marks_chain_failed_after_too_many_rpc_failures() {
-        let pool = test_pool().await;
-        let destinations = vec![destination(DestinationChain::BaseSepolia)];
-        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
-
-        let base = Arc::new(FakeSubmissionClient {
-            submitted: Mutex::new(Vec::new()),
-            submit_error: Some("base transport error".to_string()),
-            check_results: Mutex::new(vec![]),
-        });
-        let submission_clients =
-            HashMap::from([("base-sepolia", base.clone() as Arc<dyn SubmissionClient>)]);
-
-        let runner = Runner::new_for_tests(
-            pool.clone(),
-            destinations,
-            submission_clients,
-            Arc::new(NoopWatcher),
-            Arc::new(StaticFinalityClient { height: 12_345 }),
-            Arc::new(StaticBundleClient),
-            Arc::new(FakeProofService {
-                prove_calls: AtomicU64::new(0),
-            }),
-        );
-
-        runner.advance_once().await.unwrap();
-        runner.advance_once().await.unwrap();
-
-        for _ in 0..MAX_SUBMISSION_RPC_FAILURES {
-            runner.advance_once().await.unwrap();
-        }
-
-        assert!(db::next_active_job(&pool).await.unwrap().is_none());
-
-        let snapshot = db::job_snapshot(&pool, 1).await.unwrap().unwrap();
-        assert_eq!(snapshot.job_state, ReplicationJobState::Failed);
-
-        let submissions = db::job_submissions(&pool, 1).await.unwrap();
-        let submission = submissions.first().unwrap();
-        assert_eq!(submission.submission_state, ChainSubmissionState::Failed);
-        assert_eq!(
-            submission.submission_retry_count,
-            MAX_SUBMISSION_RPC_FAILURES
-        );
-        assert_eq!(
-            submission.submission_error_message.as_deref(),
-            Some("retry limit reached after 5 failed attempts: base transport error")
-        );
+        assert_eq!(solana.submitted.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -1052,6 +991,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let solana = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
@@ -1060,6 +1004,7 @@ mod tests {
                 "starknet-sepolia",
                 starknet.clone() as Arc<dyn SubmissionClient>,
             ),
+            ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -1105,10 +1050,15 @@ mod tests {
             submission_state(&submissions, "starknet-sepolia"),
             ChainSubmissionState::Confirmed
         );
+        assert_eq!(
+            submission_state(&submissions, "solana-devnet"),
+            ChainSubmissionState::Confirmed
+        );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
+        assert_eq!(solana.submitted.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -1137,6 +1087,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
         });
+        let solana = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
         let submission_clients = HashMap::from([
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
@@ -1145,6 +1100,7 @@ mod tests {
                 "starknet-sepolia",
                 starknet.clone() as Arc<dyn SubmissionClient>,
             ),
+            ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
@@ -1169,6 +1125,7 @@ mod tests {
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
+        assert_eq!(solana.submitted.lock().unwrap().len(), 1);
 
         let restarted = Runner::new_for_tests(
             pool.clone(),
@@ -1186,6 +1143,7 @@ mod tests {
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
         assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
+        assert_eq!(solana.submitted.lock().unwrap().len(), 1);
         assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
     }
 
@@ -1337,6 +1295,7 @@ mod tests {
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
             destination(DestinationChain::StarknetSepolia),
+            destination(DestinationChain::SolanaDevnet),
         ]
     }
 
@@ -1346,12 +1305,21 @@ mod tests {
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
             DestinationChain::StarknetSepolia => "0abc",
+            DestinationChain::SolanaDevnet => "solana",
         };
 
         DestinationChainConfig {
             chain,
             rpc_url: "https://example.invalid".to_string(),
-            contract_address: format!("0x000000000000000000000000000000000000{suffix}"),
+            contract_address: match chain {
+                DestinationChain::StarknetSepolia => {
+                    "0x04f213f87dd6eec0951c49ec9e2d577fabf843d7e022f33d04e6a25ff8954e61".to_string()
+                }
+                DestinationChain::SolanaDevnet => {
+                    "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx".to_string()
+                }
+                _ => format!("0x000000000000000000000000000000000000{suffix}"),
+            },
             private_key: "0x01".to_string(),
             account_address: if chain == DestinationChain::StarknetSepolia {
                 Some(

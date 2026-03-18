@@ -31,6 +31,8 @@ frontend/.next
 # Env
 .env
 
+/tools
+
 
 artifacts
 .tools/

@@ -11,6 +11,7 @@ The repository contains:
   read-only API
 - `program/` for the SP1 guest program
 - `contracts/` for the destination-chain root registry and verifier integration
+- `solana/` for the Solana Devnet root registry, tests, and deploy scripts
 - `frontend/` for the read-only landing page and replication dashboard
 
 ## Provenance
@@ -38,39 +39,49 @@ The current implementation includes:
 - SP1 public values and proof artifact handling
 - contract-side SP1 verifier and program-vkey binding
 - Starknet Sepolia destination contract and relay path
+- Solana Devnet registry workspace, deploy scripts, and backend submitter path
 - World ID root source constants
 - read-only API endpoints for status, roots, chains, and job detail
-- a dark frontend landing page and dashboard for replication state
+- a dark frontend landing page and dashboard for mixed EVM, Starknet, and
+  Solana replication state
 
 The remaining work is live end-to-end validation against deployed verifier and
-registry contracts across the EVM targets and Starknet Sepolia, plus the Phase
-5 deployment and productionization work.
+registry contracts across the EVM targets, Starknet Sepolia, and Solana
+Devnet, plus the Phase 5 deployment and productionization work.
 
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script
 `contracts/script/deploy_registry.sh`.
 
-To deploy the Starknet Sepolia registry with the values already present in
-`.env`, run:
-
-```bash
-cd contracts/starknet
-./deploy.sh
-```
+For Solana Devnet setup, deploy, and initialization, see
+[`solana/README.md`](solana/README.md).
 
 To manually submit a stored proof artifact to one configured destination chain,
 run:
 
 ```bash
 cargo run -p world-id-root-replicator-backend --bin submit_proof -- \
-  --chain starknet-sepolia \
-  --artifact artifacts/proofs/job-1.bin \
+  --chain solana-devnet \
+  --artifact artifacts/proofs/job-3.bin \
   --wait
 ```
 
 It uses the same env-driven chain configuration as the backend runner. Pass
-`--registry 0x...` to override the configured destination contract for a single
-debugging run.
+`--registry <address>` to override the configured destination contract or
+program for a single debugging run.
+
+## Current Solana Devnet deployment
+
+The current Solana Devnet deployment is:
+
+- program id:
+  `CGPJkHwUYwubDNoaLwEMMNqHcHkKz3wB3SKb2ST4i2G1`
+- state PDA:
+  `2emanoFQqqozegXYLWb6bjEB1xS1qKZxnPMr8EHKanaJ`
+- deploy signature:
+  `2wXRocS8xyQFjm7vPfmEsvWtRzQD69hpUtskejyLtaXK1h9mPv2ipLatHMC5Wb9zTbL74W8pbGaoJHqwGXMkk9EN`
+- initialize signature:
+  `2p7V1nt8BLz6w31ftsbCcuMky2kXMg2e1M9dQm2tuonKoqDqqW3rgEtGsJQjBTaUap2SXcPmfXC7LYEqfuojzPxq`
 
 To run the backend in API-only mode for UI work, use:
 

@@ -35,6 +35,7 @@ pub enum DestinationChain {
     OpSepolia,
     ArbitrumSepolia,
     StarknetSepolia,
+    SolanaDevnet,
 }
 
 impl DestinationChain {
@@ -44,6 +45,7 @@ impl DestinationChain {
             Self::OpSepolia => "11155420",
             Self::ArbitrumSepolia => "421614",
             Self::StarknetSepolia => "0x534e5f5345504f4c4941",
+            Self::SolanaDevnet => "devnet",
         }
     }
 
@@ -52,7 +54,7 @@ impl DestinationChain {
             Self::BaseSepolia => Some(84_532),
             Self::OpSepolia => Some(11_155_420),
             Self::ArbitrumSepolia => Some(421_614),
-            Self::StarknetSepolia => None,
+            Self::StarknetSepolia | Self::SolanaDevnet => None,
         }
     }
 
@@ -62,6 +64,7 @@ impl DestinationChain {
             Self::OpSepolia => "op-sepolia",
             Self::ArbitrumSepolia => "arbitrum-sepolia",
             Self::StarknetSepolia => "starknet-sepolia",
+            Self::SolanaDevnet => "solana-devnet",
         }
     }
 
@@ -71,13 +74,14 @@ impl DestinationChain {
             Self::OpSepolia => "OP_SEPOLIA",
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
             Self::StarknetSepolia => "STARKNET_SEPOLIA",
+            Self::SolanaDevnet => "SOLANA_DEVNET",
         }
     }
 
     pub const fn is_evm(self) -> bool {
         match self {
             Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => true,
-            Self::StarknetSepolia => false,
+            Self::StarknetSepolia | Self::SolanaDevnet => false,
         }
     }
 }

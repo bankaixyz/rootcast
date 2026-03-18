@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(snapshot["replication_triggered"], false);
 
         let targets = snapshot["targets"].as_array().unwrap();
-        assert_eq!(targets.len(), 4);
+        assert_eq!(targets.len(), 5);
         assert!(targets
             .iter()
             .all(|target| target["display_state"] == "blocked"));
@@ -332,6 +332,7 @@ mod tests {
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
             destination(DestinationChain::StarknetSepolia),
+            destination(DestinationChain::SolanaDevnet),
         ]
     }
 
@@ -341,12 +342,21 @@ mod tests {
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
             DestinationChain::StarknetSepolia => "0abc",
+            DestinationChain::SolanaDevnet => "solana",
         };
 
         DestinationChainConfig {
             chain,
             rpc_url: "https://example.invalid".to_string(),
-            contract_address: format!("0x000000000000000000000000000000000000{suffix}"),
+            contract_address: match chain {
+                DestinationChain::StarknetSepolia => {
+                    "0x04f213f87dd6eec0951c49ec9e2d577fabf843d7e022f33d04e6a25ff8954e61".to_string()
+                }
+                DestinationChain::SolanaDevnet => {
+                    "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx".to_string()
+                }
+                _ => format!("0x000000000000000000000000000000000000{suffix}"),
+            },
             private_key: "0x01".to_string(),
             account_address: if chain == DestinationChain::StarknetSepolia {
                 Some(

@@ -3,7 +3,7 @@ use std::env;
 use std::path::PathBuf;
 use tokio::time::{sleep, timeout, Duration};
 use world_id_root_replicator_backend::{
-    chains::{EvmSubmitter, StarknetSubmitter, SubmissionCheck, SubmissionClient},
+    chains::{EvmSubmitter, SolanaSubmitter, StarknetSubmitter, SubmissionCheck, SubmissionClient},
     config::{Config, DestinationChainConfig},
     jobs::types::DestinationChain,
     proving::sp1::{current_program_vkey, root_to_hex, ProofService, Sp1ProofService},
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     );
     println!("Submitting proof artifact...");
 
-    let client = submission_client(destination.clone());
+    let client = submission_client(destination.clone())?;
     let tx_hash = timeout(
         SUBMIT_TIMEOUT,
         client.submit_artifact(&registry_address, &args.artifact_path),
@@ -129,7 +129,7 @@ fn next_value(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<Str
 fn print_usage() {
     eprintln!(
         "Usage: cargo run -p world-id-root-replicator-backend --bin submit_proof -- \\
-  --chain <base-sepolia|op-sepolia|arbitrum-sepolia|starknet-sepolia> \\
+  --chain <base-sepolia|op-sepolia|arbitrum-sepolia|starknet-sepolia|solana-devnet> \\
   --artifact <path> [--registry <address>] [--wait]"
     );
 }
@@ -144,13 +144,16 @@ fn find_destination<'a>(
         .with_context(|| format!("unknown chain `{chain}`"))
 }
 
-fn submission_client(destination: DestinationChainConfig) -> Box<dyn SubmissionClient> {
-    match destination.chain {
+fn submission_client(destination: DestinationChainConfig) -> Result<Box<dyn SubmissionClient>> {
+    let client: Box<dyn SubmissionClient> = match destination.chain {
         DestinationChain::StarknetSepolia => {
             Box::new(StarknetSubmitter::new(destination, current_program_vkey()))
         }
+        DestinationChain::SolanaDevnet => Box::new(SolanaSubmitter::new(destination)?),
         _ => Box::new(EvmSubmitter::new(destination)),
-    }
+    };
+
+    Ok(client)
 }
 
 fn load_env() {
@@ -172,15 +175,15 @@ mod tests {
     #[test]
     fn finds_destination_by_chain_name() {
         let destinations = vec![DestinationChainConfig {
-            chain: DestinationChain::StarknetSepolia,
+            chain: DestinationChain::SolanaDevnet,
             rpc_url: "https://example.invalid".to_string(),
-            contract_address: "0x123".to_string(),
+            contract_address: "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx".to_string(),
             private_key: "0x1".to_string(),
-            account_address: Some("0x456".to_string()),
+            account_address: None,
         }];
 
-        let destination = find_destination(&destinations, "starknet-sepolia").unwrap();
-        assert_eq!(destination.name(), "starknet-sepolia");
+        let destination = find_destination(&destinations, "solana-devnet").unwrap();
+        assert_eq!(destination.name(), "solana-devnet");
     }
 
     #[test]
@@ -188,18 +191,21 @@ mod tests {
         let parsed = parse_args([
             "submit_proof",
             "--chain",
-            "starknet-sepolia",
+            "solana-devnet",
             "--artifact",
             "artifacts/proofs/job-1.bin",
             "--registry",
-            "0x123",
+            "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx",
             "--wait",
         ])
         .unwrap();
 
-        assert_eq!(parsed.chain, "starknet-sepolia");
+        assert_eq!(parsed.chain, "solana-devnet");
         assert_eq!(parsed.artifact_path, "artifacts/proofs/job-1.bin");
-        assert_eq!(parsed.registry_address.as_deref(), Some("0x123"));
+        assert_eq!(
+            parsed.registry_address.as_deref(),
+            Some("HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx")
+        );
         assert!(parsed.wait);
     }
 

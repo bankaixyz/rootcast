@@ -70,6 +70,7 @@ impl Config {
                 destination_chain_config(DestinationChain::OpSepolia)?,
                 destination_chain_config(DestinationChain::ArbitrumSepolia)?,
                 destination_chain_config(DestinationChain::StarknetSepolia)?,
+                destination_chain_config(DestinationChain::SolanaDevnet)?,
             ],
         })
     }
@@ -87,15 +88,25 @@ fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainC
         });
     }
 
+    if chain == DestinationChain::StarknetSepolia {
+        return Ok(DestinationChainConfig {
+            chain,
+            rpc_url: required_any(&["STARKNET_SEPOLIA_RPC_URL", "STARKNET_SEPOLIA_RPC"])?,
+            contract_address: required("STARKNET_SEPOLIA_REGISTRY_ADDRESS")?,
+            private_key: required_any(&["STARKNET_SEPOLIA_PRIVATE_KEY", "STARKNET_PRIVATE_KEY"])?,
+            account_address: Some(required_any(&[
+                "STARKNET_SEPOLIA_ACCOUNT_ADDRESS",
+                "STARKNET_ACCOUNT_ADDRESS",
+            ])?),
+        });
+    }
+
     Ok(DestinationChainConfig {
         chain,
-        rpc_url: required_any(&["STARKNET_SEPOLIA_RPC_URL", "STARKNET_SEPOLIA_RPC"])?,
-        contract_address: required("STARKNET_SEPOLIA_REGISTRY_ADDRESS")?,
-        private_key: required_any(&["STARKNET_SEPOLIA_PRIVATE_KEY", "STARKNET_PRIVATE_KEY"])?,
-        account_address: Some(required_any(&[
-            "STARKNET_SEPOLIA_ACCOUNT_ADDRESS",
-            "STARKNET_ACCOUNT_ADDRESS",
-        ])?),
+        rpc_url: required_any(&["SOLANA_DEVNET_RPC_URL", "SOLANA_DEVNET_RPC"])?,
+        contract_address: required("SOLANA_DEVNET_PROGRAM_ID")?,
+        private_key: required("SOLANA_DEVNET_PRIVATE_KEY")?,
+        account_address: None,
     })
 }
 

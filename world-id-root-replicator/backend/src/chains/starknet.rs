@@ -36,11 +36,6 @@ impl StarknetSubmitter {
     async fn create_account(
         &self,
     ) -> Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
-        println!(
-            "[starknet] creating account for {} via {}",
-            self.destination.name(),
-            self.destination.rpc_url
-        );
         let provider = JsonRpcClient::new(HttpTransport::new(
             Url::parse(&self.destination.rpc_url).context("parse Starknet RPC URL")?,
         ));
@@ -63,10 +58,6 @@ impl StarknetSubmitter {
         let mut account =
             SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
         account.set_block_id(BlockId::Tag(BlockTag::Latest));
-        println!(
-            "[starknet] account ready for {} with chain id {chain_id:#x}",
-            self.destination.name()
-        );
         Ok(account)
     }
 
@@ -79,17 +70,8 @@ impl StarknetSubmitter {
     }
 
     fn submit_root_calldata(&self, artifact_path: &str) -> Result<Vec<Felt>> {
-        println!(
-            "[starknet] generating submit_root calldata from {}",
-            artifact_path
-        );
         let proof = starknet_proof_calldata(artifact_path, &self.program_vkey)?;
-        let calldata = serialize_felt_array_argument(proof);
-        println!(
-            "[starknet] generated calldata with {} felts",
-            calldata.len()
-        );
-        Ok(calldata)
+        Ok(serialize_felt_array_argument(proof))
     }
 }
 
@@ -104,10 +86,6 @@ impl SubmissionClient for StarknetSubmitter {
             calldata: self.submit_root_calldata(artifact_path)?,
         };
 
-        println!(
-            "[starknet] broadcasting submit_root to {}",
-            contract_address
-        );
         let result = timeout(
             STARKNET_SEND_TIMEOUT,
             account
@@ -120,18 +98,12 @@ impl SubmissionClient for StarknetSubmitter {
         .context("timed out sending Starknet submit_root transaction")?
         .context("send Starknet submit_root transaction")?;
 
-        println!(
-            "[starknet] broadcasted transaction {}",
-            self.transaction_hash_hex(result.transaction_hash)
-        );
-
         Ok(self.transaction_hash_hex(result.transaction_hash))
     }
 
     async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck> {
         let account = self.create_account().await?;
         let tx_hash_felt = Felt::from_hex(tx_hash).context("parse Starknet tx hash")?;
-        println!("[starknet] checking receipt for {}", tx_hash);
         let receipt = match timeout(
             STARKNET_RECEIPT_TIMEOUT,
             account.provider().get_transaction_receipt(tx_hash_felt),

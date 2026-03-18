@@ -14,6 +14,7 @@ import {
   chainAddressUrl,
   chainLabel,
   chainOrder,
+  chainTargetLabel,
   chainTxUrl,
   sourceTxUrl,
 } from "@/lib/chain-metadata";
@@ -323,7 +324,7 @@ export function ReplicationTopology({
 
                   <div className="target-node__rows">
                     <TargetRow
-                      label="Contract"
+                      label={chainTargetLabel(target.chain_name)}
                       value={
                         target.registry_address ? (
                           <a
@@ -490,12 +491,12 @@ function buildTargets(
   const merged = new Map<string, TopologyTarget>();
 
   for (const chain of chains) {
-    merged.set(chain.chain_name, {
-      chain_name: chain.chain_name,
-      registry_address: chain.registry_address,
-      display_state: chain.display_state,
-      tx_hash: chain.tx_hash,
-      blocked_reason: chain.blocked_reason,
+      merged.set(chain.chain_name, {
+        chain_name: chain.chain_name,
+        registry_address: chain.registry_address,
+        display_state: chain.display_state,
+        tx_hash: chain.tx_hash,
+        blocked_reason: chain.blocked_reason,
       error_message: chain.error_message,
     });
   }

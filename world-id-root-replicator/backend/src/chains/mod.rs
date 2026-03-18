@@ -1,7 +1,9 @@
 mod evm;
+pub mod solana;
 mod starknet;
 
 pub use evm::EvmSubmitter;
+pub use solana::SolanaSubmitter;
 pub use starknet::StarknetSubmitter;
 
 use anyhow::Result;

@@ -1,30 +1,47 @@
 const TARGET_CHAIN_METADATA: Record<
   string,
-  { addressBaseUrl: string; label: string; order: number; txBaseUrl: string }
+  {
+    addressUrl: (address: string) => string;
+    label: string;
+    order: number;
+    targetLabel: string;
+    txUrl: (hash: string) => string;
+  }
 > = {
   "arbitrum-sepolia": {
-    addressBaseUrl: "https://sepolia.arbiscan.io/address/",
+    addressUrl: (address) => `https://sepolia.arbiscan.io/address/${address}`,
     label: "Arbitrum",
     order: 0,
-    txBaseUrl: "https://sepolia.arbiscan.io/tx/",
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia.arbiscan.io/tx/${hash}`,
   },
   "base-sepolia": {
-    addressBaseUrl: "https://sepolia.basescan.org/address/",
+    addressUrl: (address) => `https://sepolia.basescan.org/address/${address}`,
     label: "Base",
     order: 1,
-    txBaseUrl: "https://sepolia.basescan.org/tx/",
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia.basescan.org/tx/${hash}`,
   },
   "op-sepolia": {
-    addressBaseUrl: "https://sepolia-optimism.etherscan.io/address/",
+    addressUrl: (address) => `https://sepolia-optimism.etherscan.io/address/${address}`,
     label: "OP",
     order: 2,
-    txBaseUrl: "https://sepolia-optimism.etherscan.io/tx/",
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia-optimism.etherscan.io/tx/${hash}`,
   },
   "starknet-sepolia": {
-    addressBaseUrl: "https://sepolia.voyager.online/contract",
+    addressUrl: (address) => `https://sepolia.voyager.online/contract/${address}`,
     label: "Starknet",
     order: 3,
-    txBaseUrl: "https://sepolia.voyager.online/tx/",
+    targetLabel: "Contract",
+    txUrl: (hash) => `https://sepolia.voyager.online/tx/${hash}`,
+  },
+  "solana-devnet": {
+    addressUrl: (address) => `https://solscan.io/account/${address}?cluster=devnet`,
+    label: "Solana",
+    order: 4,
+    targetLabel: "Program",
+    txUrl: (hash) => `https://solscan.io/tx/${hash}?cluster=devnet`,
   },
 };
 
@@ -36,6 +53,10 @@ export function chainOrder(chainName: string) {
   return TARGET_CHAIN_METADATA[chainName]?.order ?? Number.MAX_SAFE_INTEGER;
 }
 
+export function chainTargetLabel(chainName: string) {
+  return TARGET_CHAIN_METADATA[chainName]?.targetLabel ?? "Target";
+}
+
 export function allKnownTargetChains() {
   return Object.keys(TARGET_CHAIN_METADATA).sort(
     (left, right) => chainOrder(left) - chainOrder(right),
@@ -44,12 +65,12 @@ export function allKnownTargetChains() {
 
 export function chainTxUrl(chainName: string, hash: string) {
   const metadata = TARGET_CHAIN_METADATA[chainName];
-  return metadata ? `${metadata.txBaseUrl}${hash}` : hash;
+  return metadata ? metadata.txUrl(hash) : hash;
 }
 
 export function chainAddressUrl(chainName: string, address: string) {
   const metadata = TARGET_CHAIN_METADATA[chainName];
-  return metadata ? `${metadata.addressBaseUrl}${address}` : address;
+  return metadata ? metadata.addressUrl(address) : address;
 }
 
 export function sourceTxUrl(hash: string) {
