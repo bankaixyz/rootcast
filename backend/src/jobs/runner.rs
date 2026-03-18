@@ -774,6 +774,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recording_a_new_root_keeps_an_older_pending_root_after_50_minutes() {
+        let pool = test_pool().await;
+        let destinations = all_destinations();
+
+        record_root(&pool, &destinations, [1u8; 32], 10, "0x111").await;
+        sqlx::query(
+            r#"
+            UPDATE observed_roots
+            SET observed_at = datetime('now', '-51 minutes')
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let created = db::record_observed_root(
+            &pool,
+            &ObservedRoot {
+                root_hex: format!("0x{}", hex::encode([2u8; 32])),
+                source_block_number: 20,
+                source_tx_hash: "0x222".to_string(),
+            },
+            &destinations,
+            false,
+        )
+        .await
+        .unwrap();
+
+        let roots = sqlx::query_as::<_, (String, i64, String)>(
+            "SELECT root_hex, source_block_number, status FROM observed_roots ORDER BY source_block_number",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+
+        assert!(created.created);
+        assert!(created.skipped);
+        assert!(created.skipped_due_to_pending_root_lock);
+        assert_eq!(created.replaced_pending_count, 0);
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].1, 10);
+        assert_eq!(roots[0].2, ReplicationJobState::WaitingFinality.as_db_str());
+        assert_eq!(roots[1].1, 20);
+        assert_eq!(roots[1].2, "skipped");
+        assert_eq!(job.source_block_number, 10);
+    }
+
+    #[tokio::test]
     async fn runner_persists_retryable_failures() {
         let pool = test_pool().await;
         let destinations = vec![destination(DestinationChain::BaseSepolia)];
@@ -1571,6 +1620,7 @@ mod tests {
 
         assert!(created.created);
         assert!(created.skipped);
+        assert!(!created.skipped_due_to_pending_root_lock);
         assert_eq!(created.replaced_pending_count, 0);
         assert_eq!(skipped_status, "skipped");
         assert!(db::next_active_job(&pool).await.unwrap().is_none());

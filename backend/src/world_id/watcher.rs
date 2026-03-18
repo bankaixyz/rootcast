@@ -98,7 +98,14 @@ impl RootWatcher for WorldIdWatcher {
                     self.enforce_min_proof_request_gap,
                 )
                 .await?;
-                if record.created && record.skipped {
+                if record.created && record.skipped_due_to_pending_root_lock {
+                    info!(
+                        root = %observed_root.root_hex,
+                        source_block_number = observed_root.source_block_number,
+                        source_tx_hash = %observed_root.source_tx_hash,
+                        "skipped World ID root because an older pending root has been waiting longer than 50 minutes"
+                    );
+                } else if record.created && record.skipped {
                     info!(
                         root = %observed_root.root_hex,
                         source_block_number = observed_root.source_block_number,

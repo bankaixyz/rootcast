@@ -6,6 +6,7 @@ use sqlx::{FromRow, SqlitePool};
 use std::str::FromStr;
 
 const MIN_PROOF_REQUEST_AGE_SECS: i64 = 50 * 60;
+const PENDING_ROOT_REPLACEMENT_LOCK_AGE_SECS: i64 = 50 * 60;
 
 pub async fn connect(database_url: &str) -> Result<SqlitePool> {
     let options = SqliteConnectOptions::from_str(database_url)?
@@ -190,6 +191,7 @@ impl TryFrom<ChainSubmissionRow> for ChainSubmission {
 pub struct RecordObservedRootResult {
     pub created: bool,
     pub skipped: bool,
+    pub skipped_due_to_pending_root_lock: bool,
     pub replaced_pending_count: u64,
 }
 
@@ -347,6 +349,52 @@ pub async fn record_observed_root(
         return Ok(RecordObservedRootResult {
             created: false,
             skipped: false,
+            skipped_due_to_pending_root_lock: false,
+            replaced_pending_count: 0,
+        });
+    }
+
+    let oldest_pending_root_age_seconds = sqlx::query_scalar::<_, Option<i64>>(
+        r#"
+        SELECT CAST((julianday('now') - julianday(o.observed_at)) * 86400 AS INTEGER)
+        FROM replication_jobs j
+        INNER JOIN observed_roots o ON o.id = j.observed_root_id
+        WHERE j.state IN (?, ?)
+        ORDER BY o.observed_at ASC, j.id ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(ReplicationJobState::WaitingFinality.as_db_str())
+    .bind(ReplicationJobState::ReadyToProve.as_db_str())
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+
+    if oldest_pending_root_age_seconds
+        .is_some_and(|age_seconds| age_seconds >= PENDING_ROOT_REPLACEMENT_LOCK_AGE_SECS)
+    {
+        let insert = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO observed_roots (
+                root_hex,
+                source_block_number,
+                source_tx_hash,
+                status
+            ) VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(&root.root_hex)
+        .bind(to_i64(root.source_block_number)?)
+        .bind(&root.source_tx_hash)
+        .bind("skipped")
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        return Ok(RecordObservedRootResult {
+            created: insert.rows_affected() > 0,
+            skipped: true,
+            skipped_due_to_pending_root_lock: true,
             replaced_pending_count: 0,
         });
     }
@@ -389,6 +437,7 @@ pub async fn record_observed_root(
             return Ok(RecordObservedRootResult {
                 created: insert.rows_affected() > 0,
                 skipped: true,
+                skipped_due_to_pending_root_lock: false,
                 replaced_pending_count: 0,
             });
         }
@@ -501,6 +550,7 @@ pub async fn record_observed_root(
     Ok(RecordObservedRootResult {
         created: job_insert.rows_affected() > 0,
         skipped: false,
+        skipped_due_to_pending_root_lock: false,
         replaced_pending_count: u64::try_from(replaced_pending_count)
             .context("replaced_pending_count does not fit in u64")?,
     })
