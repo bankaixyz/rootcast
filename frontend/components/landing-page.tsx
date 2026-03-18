@@ -74,15 +74,20 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
-    question: "What is Bankai and how does it enable trustless proofs?",
+    question: "What is Bankai and how does it enable trustless replication?",
     answer: (
       <p>
-        Bankai is an interoperability system built around stateless light
-        clients. Instead of trusting a relayer or keeping a destination-side
-        light client synced forever, you verify a proof when you need the data.
-        If the Bankai proof verifies, you know the committed chain data is
-        valid according to consensus. That is what lets this system move World
-        ID roots across chains without introducing a new trust layer.
+        Bankai is built on an idea called{" "}
+        <a href="https://docs.bankai.xyz/docs/concepts/stateless-light-clients">
+          stateless light clients
+        </a>
+        . Light clients let you verify blockchain data trustlessly, without
+        trusting a relayer or oracle, but traditionally they require deploying
+        and continuously syncing a contract on every chain. Bankai removes
+        that burden. You verify a single proof, and if it checks out, the
+        data is valid according to the source chain's consensus. That proof
+        works anywhere, on any chain, in any environment, with nothing to
+        deploy or keep in sync.
       </p>
     ),
   },
@@ -113,16 +118,28 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
-    question: "How is this different from a traditional bridge?",
+    question: "Which networks are supported?",
     answer: (
       <p>
-        Traditional bridges usually ask you to trust a relayer, validator set,
-        oracle network, or some other off-chain coordination layer. This system
-        works differently: correctness comes from proving finalized chain data
-        with light-client-style consensus verification. And because the light
-        client is stateless, we do not need to keep destination-side clients
-        continuously synced just to stay ready. That gives you a very different
-        trust model and much lighter always-on destination infrastructure.
+        Right now the system runs on Sepolia only. Mainnet support and
+        additional destination chains are in planning.
+      </p>
+    ),
+  },
+  {
+    question: "Why use Bankai instead of a traditional messaging?",
+    answer: (
+      <p>
+        This system could be built on a traditional messaging bridge, but that
+        comes with two costs. First, trust assumptions: most bridges rely on a
+        relayer, validator set, or oracle network whose honesty you have to
+        take on faith. Second, and often overlooked, is route availability. A
+        bridge only works if someone has built and actively maintains a route
+        to your target chain. If you want World ID on a new appchain, an
+        emerging L2, or inside a client-side ZK program, you are stuck waiting
+        for that route to exist. With Bankai, the only requirement on the
+        destination side is a Groth16 verifier. No bridge route, no relayer
+        infrastructure, no ongoing sync.
       </p>
     ),
   },
@@ -154,7 +171,7 @@ export function LandingPage({ snapshot }: LandingPageProps) {
             <a href="/dashboard" className="landing-btn landing-btn--primary">
               View Live Dashboard
             </a>
-            <a href="#" className="landing-btn landing-btn--ghost">
+            <a href="https://github.com/bankaixyz/world-id-replicator" className="landing-btn landing-btn--ghost" target="_blank" rel="noreferrer">
               View Source
             </a>
           </div>
@@ -231,7 +248,7 @@ export function LandingPage({ snapshot }: LandingPageProps) {
           Deploy an identity root registry on any chain and join the replication
           network.
         </p>
-        <a href="#" className="landing-btn landing-btn--primary">
+        <a href="https://github.com/bankaixyz/world-id-replicator" className="landing-btn landing-btn--primary" target="_blank" rel="noreferrer">
           Get Started on GitHub
         </a>
       </section>

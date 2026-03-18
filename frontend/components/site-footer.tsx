@@ -3,7 +3,7 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer__inner">
         <div className="site-footer__left">
-          <span className="site-footer__brand">World ID Root Replicator</span>
+          <span className="site-footer__brand">World ID Replicator</span>
           <span className="site-footer__powered">Powered by Bankai</span>
         </div>
         <div className="site-footer__links">
@@ -26,7 +26,7 @@ export function SiteFooter() {
           >
             Docs
           </a>
-          <a href="#" className="site-footer__link">
+          <a href="https://github.com/bankaixyz/world-id-replicator" className="site-footer__link" target="_blank" rel="noreferrer">
             GitHub
           </a>
           <a

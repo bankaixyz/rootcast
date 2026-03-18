@@ -27,7 +27,7 @@ export function Navbar({ currentPage = "landing" }: NavbarProps) {
         >
           Bankai
         </a>
-        <a href="#" className="landing-nav__link">
+        <a href="https://github.com/bankaixyz/world-id-replicator" className="landing-nav__link" target="_blank" rel="noreferrer">
           GitHub
         </a>
       </div>
