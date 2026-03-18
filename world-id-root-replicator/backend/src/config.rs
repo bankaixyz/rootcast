@@ -117,9 +117,7 @@ fn parse_enabled_destination_chains(value: &str) -> Result<Vec<DestinationChain>
     }
 
     if chains.is_empty() {
-        anyhow::bail!(
-            "ENABLED_DESTINATION_CHAINS must include at least one supported chain name"
-        );
+        anyhow::bail!("ENABLED_DESTINATION_CHAINS must include at least one supported chain name");
     }
 
     Ok(chains)
@@ -203,16 +201,12 @@ impl FromStr for DestinationChain {
         match value {
             "base" | "base-sepolia" => Ok(Self::BaseSepolia),
             "op" | "op-sepolia" | "optimism" | "optimism-sepolia" => Ok(Self::OpSepolia),
-            "arb" | "arbitrum" | "arb-sepolia" | "arbitrum-sepolia" => {
-                Ok(Self::ArbitrumSepolia)
-            }
+            "arb" | "arbitrum" | "arb-sepolia" | "arbitrum-sepolia" => Ok(Self::ArbitrumSepolia),
             "starknet" | "starknet-sepolia" => Ok(Self::StarknetSepolia),
             "solana" | "solana-devnet" => Ok(Self::SolanaDevnet),
             "chiado" | "gnosis" | "gnosis-chiado" => Ok(Self::Chiado),
             "monad" | "monad-testnet" => Ok(Self::MonadTestnet),
-            "hyper" | "hyperevm" | "hyperevm-testnet" | "hyperliquid" => {
-                Ok(Self::HyperEvmTestnet)
-            }
+            "hyper" | "hyperevm" | "hyperevm-testnet" | "hyperliquid" => Ok(Self::HyperEvmTestnet),
             "tempo" | "tempo-testnet" => Ok(Self::TempoTestnet),
             "megaeth" | "megaeth-testnet" => Ok(Self::MegaEthTestnet),
             "plasma" | "plasma-testnet" => Ok(Self::PlasmaTestnet),
@@ -257,21 +251,17 @@ mod tests {
         let error =
             parse_enabled_destination_chains("base-sepolia, definitely-not-a-chain").unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("unknown destination chain `definitely-not-a-chain`")
-        );
+        assert!(error
+            .to_string()
+            .contains("unknown destination chain `definitely-not-a-chain`"));
     }
 
     #[test]
     fn parse_enabled_destination_chains_rejects_empty_selection() {
         let error = parse_enabled_destination_chains(" , ").unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("ENABLED_DESTINATION_CHAINS must include at least one supported chain")
-        );
+        assert!(error
+            .to_string()
+            .contains("ENABLED_DESTINATION_CHAINS must include at least one supported chain"));
     }
 }

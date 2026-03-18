@@ -116,11 +116,16 @@ impl Runner {
 
         db::repair_inflight_jobs(&self.pool).await?;
 
-        let Some(job) = db::next_active_job(&self.pool).await? else {
+        let jobs = db::active_jobs(&self.pool).await?;
+        if jobs.is_empty() {
             return Ok(());
-        };
+        }
 
-        self.advance_job(job).await
+        for job in jobs {
+            self.advance_job(job).await?;
+        }
+
+        Ok(())
     }
 
     async fn advance_job(&self, job: ActiveJob) -> Result<()> {
@@ -798,6 +803,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runner_advances_newer_jobs_even_when_an_older_submission_is_stuck() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+
+        record_root(&pool, &destinations, [3u8; 32], 10, "0xold").await;
+        let old_job = db::next_active_job(&pool).await.unwrap().unwrap();
+        db::mark_job_proof_ready(&pool, old_job.job_id, "/tmp/fake-proof-old")
+            .await
+            .unwrap();
+        let old_submission = db::job_submissions(&pool, old_job.job_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        db::mark_submission_submitting(
+            &pool,
+            old_submission.submission_id,
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+        )
+        .await
+        .unwrap();
+        db::update_job_state(&pool, old_job.job_id, ReplicationJobState::Submitting)
+            .await
+            .unwrap();
+
+        record_root(&pool, &destinations, [4u8; 32], 20, "0xnew").await;
+        let new_job_id = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM replication_jobs WHERE observed_root_id != ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(old_job.observed_root_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            HashMap::from([("base-sepolia", base as Arc<dyn SubmissionClient>)]),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 20 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+
+        let new_job = db::job_snapshot(&pool, new_job_id).await.unwrap().unwrap();
+        assert_eq!(new_job.job_state, ReplicationJobState::ReadyToProve);
+        assert_eq!(new_job.bankai_finalized_block_number, Some(20));
+    }
+
+    #[tokio::test]
     async fn runner_proves_once_and_fans_out_to_all_chains() {
         let pool = test_pool().await;
         let destinations = all_destinations();
@@ -862,14 +927,26 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
-            ("starknet-sepolia", starknet.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
             ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
             ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
-            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            (
+                "hyperevm-testnet",
+                hyperevm.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
-            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
-            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
+            (
+                "megaeth-testnet",
+                megaeth.clone() as Arc<dyn SubmissionClient>,
+            ),
+            (
+                "plasma-testnet",
+                plasma.clone() as Arc<dyn SubmissionClient>,
+            ),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),
@@ -984,14 +1061,26 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
-            ("starknet-sepolia", starknet.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
             ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
             ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
-            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            (
+                "hyperevm-testnet",
+                hyperevm.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
-            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
-            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
+            (
+                "megaeth-testnet",
+                megaeth.clone() as Arc<dyn SubmissionClient>,
+            ),
+            (
+                "plasma-testnet",
+                plasma.clone() as Arc<dyn SubmissionClient>,
+            ),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -1132,14 +1221,26 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
-            ("starknet-sepolia", starknet.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
             ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
             ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
-            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            (
+                "hyperevm-testnet",
+                hyperevm.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
-            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
-            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
+            (
+                "megaeth-testnet",
+                megaeth.clone() as Arc<dyn SubmissionClient>,
+            ),
+            (
+                "plasma-testnet",
+                plasma.clone() as Arc<dyn SubmissionClient>,
+            ),
         ]);
 
         let runner = Runner::new_for_tests(
@@ -1291,14 +1392,26 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
-            ("starknet-sepolia", starknet.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
             ("chiado", chiado.clone() as Arc<dyn SubmissionClient>),
             ("monad-testnet", monad.clone() as Arc<dyn SubmissionClient>),
-            ("hyperevm-testnet", hyperevm.clone() as Arc<dyn SubmissionClient>),
+            (
+                "hyperevm-testnet",
+                hyperevm.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("tempo-testnet", tempo.clone() as Arc<dyn SubmissionClient>),
-            ("megaeth-testnet", megaeth.clone() as Arc<dyn SubmissionClient>),
-            ("plasma-testnet", plasma.clone() as Arc<dyn SubmissionClient>),
+            (
+                "megaeth-testnet",
+                megaeth.clone() as Arc<dyn SubmissionClient>,
+            ),
+            (
+                "plasma-testnet",
+                plasma.clone() as Arc<dyn SubmissionClient>,
+            ),
         ]);
         let proof_service = Arc::new(FakeProofService {
             prove_calls: AtomicU64::new(0),

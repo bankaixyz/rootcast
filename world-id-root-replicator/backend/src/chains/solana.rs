@@ -73,7 +73,9 @@ impl SubmissionClient for SolanaSubmitter {
         let signature: Signature = tx_hash
             .parse()
             .with_context(|| format!("parse {} transaction signature", self.destination.name()))?;
-        let statuses = self.rpc_client.get_signature_statuses(&[signature])?;
+        let statuses = self
+            .rpc_client
+            .get_signature_statuses_with_history(&[signature])?;
         let Some(status) = statuses.value.into_iter().next().flatten() else {
             return Ok(SubmissionCheck::Pending);
         };

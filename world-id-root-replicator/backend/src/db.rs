@@ -61,6 +61,7 @@ pub struct JobSnapshotRow {
     pub source_block_number: i64,
     pub source_tx_hash: String,
     pub observed_at: String,
+    pub updated_at: String,
     pub bankai_finalized_at: Option<String>,
     pub bankai_finalized_block_number: Option<i64>,
     pub observed_root_status: String,
@@ -79,6 +80,7 @@ pub struct JobSnapshot {
     pub source_block_number: u64,
     pub source_tx_hash: String,
     pub observed_at: String,
+    pub updated_at: String,
     pub bankai_finalized_at: Option<String>,
     pub bankai_finalized_block_number: Option<u64>,
     pub observed_root_status: String,
@@ -122,6 +124,7 @@ impl TryFrom<JobSnapshotRow> for JobSnapshot {
                 .context("source_block_number does not fit in u64")?,
             source_tx_hash: row.source_tx_hash,
             observed_at: row.observed_at,
+            updated_at: row.updated_at,
             bankai_finalized_at: row.bankai_finalized_at,
             bankai_finalized_block_number: row
                 .bankai_finalized_block_number
@@ -217,6 +220,7 @@ pub async fn latest_job_snapshot(pool: &SqlitePool) -> Result<Option<JobSnapshot
             o.source_block_number,
             o.source_tx_hash,
             o.observed_at,
+            j.updated_at,
             o.bankai_finalized_at,
             o.bankai_finalized_block_number,
             o.status AS observed_root_status,
@@ -258,6 +262,7 @@ pub async fn recent_job_snapshots(pool: &SqlitePool, limit: u32) -> Result<Vec<J
             o.source_block_number,
             o.source_tx_hash,
             o.observed_at,
+            j.updated_at,
             o.bankai_finalized_at,
             o.bankai_finalized_block_number,
             o.status AS observed_root_status,
@@ -291,6 +296,7 @@ pub async fn job_snapshot(pool: &SqlitePool, job_id: i64) -> Result<Option<JobSn
             o.source_block_number,
             o.source_tx_hash,
             o.observed_at,
+            j.updated_at,
             o.bankai_finalized_at,
             o.bankai_finalized_block_number,
             o.status AS observed_root_status,
@@ -528,8 +534,8 @@ pub async fn repair_inflight_jobs(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub async fn next_active_job(pool: &SqlitePool) -> Result<Option<ActiveJob>> {
-    let row = sqlx::query_as::<_, ActiveJobRow>(
+pub async fn active_jobs(pool: &SqlitePool) -> Result<Vec<ActiveJob>> {
+    let rows = sqlx::query_as::<_, ActiveJobRow>(
         r#"
         SELECT
             j.id AS job_id,
@@ -546,17 +552,22 @@ pub async fn next_active_job(pool: &SqlitePool) -> Result<Option<ActiveJob>> {
         INNER JOIN observed_roots o ON o.id = j.observed_root_id
         WHERE j.state IN (?, ?, ?, ?)
         ORDER BY j.id
-        LIMIT 1
         "#,
     )
     .bind(ReplicationJobState::WaitingFinality.as_db_str())
     .bind(ReplicationJobState::ReadyToProve.as_db_str())
     .bind(ReplicationJobState::ProofReady.as_db_str())
     .bind(ReplicationJobState::Submitting.as_db_str())
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
 
-    row.map(ActiveJob::try_from).transpose()
+    rows.into_iter()
+        .map(ActiveJob::try_from)
+        .collect::<Result<Vec<_>>>()
+}
+
+pub async fn next_active_job(pool: &SqlitePool) -> Result<Option<ActiveJob>> {
+    Ok(active_jobs(pool).await?.into_iter().next())
 }
 
 pub async fn job_submissions(pool: &SqlitePool, job_id: i64) -> Result<Vec<ChainSubmission>> {
