@@ -6,9 +6,7 @@ use world_id_root_replicator_backend::chains::solana::{initialize_registry, stat
 fn main() -> Result<()> {
     load_env();
 
-    let command = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "help".to_string());
+    let command = env::args().nth(1).unwrap_or_else(|| "help".to_string());
 
     match command.as_str() {
         "initialize" => initialize(),

@@ -34,22 +34,27 @@ pub enum DestinationChain {
     BaseSepolia,
     OpSepolia,
     ArbitrumSepolia,
+    StarknetSepolia,
     SolanaDevnet,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub enum DestinationKind {
-    Evm,
-    Solana,
-}
-
 impl DestinationChain {
-    pub const fn chain_id(self) -> u64 {
+    pub const fn chain_id(self) -> &'static str {
         match self {
-            Self::BaseSepolia => 84_532,
-            Self::OpSepolia => 11_155_420,
-            Self::ArbitrumSepolia => 421_614,
-            Self::SolanaDevnet => 103,
+            Self::BaseSepolia => "84532",
+            Self::OpSepolia => "11155420",
+            Self::ArbitrumSepolia => "421614",
+            Self::StarknetSepolia => "0x534e5f5345504f4c4941",
+            Self::SolanaDevnet => "devnet",
+        }
+    }
+
+    pub const fn evm_chain_id(self) -> Option<u64> {
+        match self {
+            Self::BaseSepolia => Some(84_532),
+            Self::OpSepolia => Some(11_155_420),
+            Self::ArbitrumSepolia => Some(421_614),
+            Self::StarknetSepolia | Self::SolanaDevnet => None,
         }
     }
 
@@ -58,6 +63,7 @@ impl DestinationChain {
             Self::BaseSepolia => "base-sepolia",
             Self::OpSepolia => "op-sepolia",
             Self::ArbitrumSepolia => "arbitrum-sepolia",
+            Self::StarknetSepolia => "starknet-sepolia",
             Self::SolanaDevnet => "solana-devnet",
         }
     }
@@ -67,23 +73,15 @@ impl DestinationChain {
             Self::BaseSepolia => "BASE_SEPOLIA",
             Self::OpSepolia => "OP_SEPOLIA",
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
+            Self::StarknetSepolia => "STARKNET_SEPOLIA",
             Self::SolanaDevnet => "SOLANA_DEVNET",
         }
     }
 
-    pub const fn kind(self) -> DestinationKind {
+    pub const fn is_evm(self) -> bool {
         match self {
-            Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => DestinationKind::Evm,
-            Self::SolanaDevnet => DestinationKind::Solana,
-        }
-    }
-
-    pub const fn target_address_env(self) -> &'static str {
-        match self {
-            Self::BaseSepolia => "BASE_SEPOLIA_REGISTRY_ADDRESS",
-            Self::OpSepolia => "OP_SEPOLIA_REGISTRY_ADDRESS",
-            Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA_REGISTRY_ADDRESS",
-            Self::SolanaDevnet => "SOLANA_DEVNET_PROGRAM_ID",
+            Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => true,
+            Self::StarknetSepolia | Self::SolanaDevnet => false,
         }
     }
 }

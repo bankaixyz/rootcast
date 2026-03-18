@@ -25,7 +25,7 @@ CREATE TABLE chain_submissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     replication_job_id INTEGER NOT NULL,
     chain_name TEXT NOT NULL,
-    chain_id INTEGER NOT NULL,
+    chain_id TEXT NOT NULL,
     registry_address TEXT NOT NULL,
     state TEXT NOT NULL,
     tx_hash TEXT,

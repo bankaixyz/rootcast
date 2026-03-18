@@ -5,8 +5,8 @@ use serde::Serialize;
 #[derive(Clone, Debug)]
 pub struct ConfiguredChain {
     pub name: &'static str,
-    pub chain_id: u64,
-    pub target_address: String,
+    pub chain_id: String,
+    pub registry_address: String,
 }
 
 #[derive(Serialize)]
@@ -68,8 +68,8 @@ pub struct RootSnapshotResponse {
 #[derive(Clone, Serialize)]
 pub struct ReplicationTargetResponse {
     pub chain_name: String,
-    pub chain_id: u64,
-    pub target_address: String,
+    pub chain_id: String,
+    pub registry_address: String,
     pub submission_state: String,
     pub tx_hash: Option<String>,
     pub error_message: Option<String>,
@@ -81,8 +81,8 @@ pub struct ReplicationTargetResponse {
 #[derive(Serialize)]
 pub struct ChainStatusResponse {
     pub chain_name: &'static str,
-    pub chain_id: u64,
-    pub target_address: String,
+    pub chain_id: String,
+    pub registry_address: String,
     pub latest_job_id: Option<i64>,
     pub latest_root_hex: Option<String>,
     pub latest_source_block_number: Option<u64>,
@@ -173,8 +173,8 @@ pub fn chain_status(
 
     ChainStatusResponse {
         chain_name: configured_chain.name,
-        chain_id: configured_chain.chain_id,
-        target_address: configured_chain.target_address.clone(),
+        chain_id: configured_chain.chain_id.clone(),
+        registry_address: configured_chain.registry_address.clone(),
         latest_job_id: latest_snapshot.map(|snapshot| snapshot.job_id),
         latest_root_hex: latest_snapshot.map(|snapshot| snapshot.root_hex.clone()),
         latest_source_block_number: latest_snapshot.map(|snapshot| snapshot.source_block_number),
@@ -195,7 +195,7 @@ fn replication_target(
     ReplicationTargetResponse {
         chain_name: submission.chain_name,
         chain_id: submission.chain_id,
-        target_address: submission.target_address,
+        registry_address: submission.registry_address,
         submission_state: submission.submission_state.as_db_str().to_string(),
         tx_hash: submission.submission_tx_hash,
         error_message: submission.submission_error_message,

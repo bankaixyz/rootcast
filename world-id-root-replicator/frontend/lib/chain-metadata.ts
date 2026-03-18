@@ -29,10 +29,17 @@ const TARGET_CHAIN_METADATA: Record<
     targetLabel: "Registry",
     txUrl: (hash) => `https://sepolia-optimism.etherscan.io/tx/${hash}`,
   },
+  "starknet-sepolia": {
+    addressUrl: (address) => `https://sepolia.voyager.online/contract/${address}`,
+    label: "Starknet",
+    order: 3,
+    targetLabel: "Contract",
+    txUrl: (hash) => `https://sepolia.voyager.online/tx/${hash}`,
+  },
   "solana-devnet": {
     addressUrl: (address) => `https://solscan.io/account/${address}?cluster=devnet`,
     label: "Solana",
-    order: 3,
+    order: 4,
     targetLabel: "Program",
     txUrl: (hash) => `https://solscan.io/tx/${hash}?cluster=devnet`,
   },

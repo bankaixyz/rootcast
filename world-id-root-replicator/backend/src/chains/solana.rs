@@ -41,8 +41,8 @@ impl SolanaSubmitter {
 
 #[async_trait]
 impl SubmissionClient for SolanaSubmitter {
-    async fn submit_artifact(&self, target_address: &str, artifact_path: &str) -> Result<String> {
-        let program_id = parse_pubkey(target_address, self.destination.name())?;
+    async fn submit_artifact(&self, contract_address: &str, artifact_path: &str) -> Result<String> {
+        let program_id = parse_pubkey(contract_address, self.destination.name())?;
         let proof = load_proof(artifact_path)?;
         let public_values = proof.public_values.to_vec();
         let decoded = decode_public_values(&public_values)?;
@@ -96,10 +96,8 @@ pub fn initialize_registry(
     program_vkey: &str,
 ) -> Result<String> {
     let keypair = load_solana_keypair(private_key)?;
-    let rpc_client = RpcClient::new_with_commitment(
-        rpc_url.to_string(),
-        CommitmentConfig::confirmed(),
-    );
+    let rpc_client =
+        RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
     let program_id = parse_pubkey(program_id, "solana-devnet")?;
     let (state_pda, _) = state_pda(&program_id);
     let program_vkey_hash = parse_program_vkey(program_vkey)?;
@@ -229,8 +227,8 @@ fn send_instruction(
         .context("send and confirm Solana transaction")
 }
 
-fn parse_pubkey(target_address: &str, chain_name: &str) -> Result<Pubkey> {
-    Pubkey::from_str(target_address)
+fn parse_pubkey(contract_address: &str, chain_name: &str) -> Result<Pubkey> {
+    Pubkey::from_str(contract_address)
         .with_context(|| format!("parse {chain_name} target address as Solana pubkey"))
 }
 

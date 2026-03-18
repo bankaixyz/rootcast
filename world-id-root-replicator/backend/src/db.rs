@@ -145,8 +145,8 @@ impl TryFrom<JobSnapshotRow> for JobSnapshot {
 pub struct ChainSubmissionRow {
     pub submission_id: i64,
     pub chain_name: String,
-    pub chain_id: i64,
-    pub target_address: String,
+    pub chain_id: String,
+    pub registry_address: String,
     pub submission_state: String,
     pub submission_tx_hash: Option<String>,
     pub submission_error_message: Option<String>,
@@ -157,8 +157,8 @@ pub struct ChainSubmissionRow {
 pub struct ChainSubmission {
     pub submission_id: i64,
     pub chain_name: String,
-    pub chain_id: u64,
-    pub target_address: String,
+    pub chain_id: String,
+    pub registry_address: String,
     pub submission_state: ChainSubmissionState,
     pub submission_tx_hash: Option<String>,
     pub submission_error_message: Option<String>,
@@ -172,8 +172,8 @@ impl TryFrom<ChainSubmissionRow> for ChainSubmission {
         Ok(Self {
             submission_id: row.submission_id,
             chain_name: row.chain_name,
-            chain_id: u64::try_from(row.chain_id).context("chain_id does not fit in u64")?,
-            target_address: row.target_address,
+            chain_id: row.chain_id,
+            registry_address: row.registry_address,
             submission_state: row.submission_state.parse()?,
             submission_tx_hash: row.submission_tx_hash,
             submission_error_message: row.submission_error_message,
@@ -477,15 +477,15 @@ pub async fn record_observed_root(
                 replication_job_id,
                 chain_name,
                 chain_id,
-                target_address,
+                registry_address,
                 state
             ) VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(job_id)
         .bind(destination.name())
-        .bind(to_i64(destination.chain_id())?)
-        .bind(&destination.target_address)
+        .bind(destination.chain_id())
+        .bind(&destination.contract_address)
         .bind(ChainSubmissionState::Pending.as_db_str())
         .execute(&mut *tx)
         .await?;
@@ -565,8 +565,8 @@ pub async fn job_submissions(pool: &SqlitePool, job_id: i64) -> Result<Vec<Chain
         SELECT
             id AS submission_id,
             chain_name,
-            chain_id,
-            target_address,
+            CAST(chain_id AS TEXT) AS chain_id,
+            registry_address,
             state AS submission_state,
             tx_hash AS submission_tx_hash,
             error_message AS submission_error_message,
@@ -739,6 +739,26 @@ pub async fn mark_job_failed(pool: &SqlitePool, job_id: i64, message: &str) -> R
     Ok(())
 }
 
+pub async fn mark_job_failed_after_retry(
+    pool: &SqlitePool,
+    job_id: i64,
+    message: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE replication_jobs
+        SET state = ?, error_message = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ReplicationJobState::Failed.as_db_str())
+    .bind(message)
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn mark_submission_submitting(
     pool: &SqlitePool,
     submission_id: i64,
@@ -809,6 +829,26 @@ pub async fn mark_submission_failed(
         r#"
         UPDATE chain_submissions
         SET state = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ChainSubmissionState::Failed.as_db_str())
+    .bind(message)
+    .bind(submission_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_submission_failed_after_retry(
+    pool: &SqlitePool,
+    submission_id: i64,
+    message: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE chain_submissions
+        SET state = ?, error_message = ?, retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         "#,
     )

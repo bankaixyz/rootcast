@@ -1,4 +1,4 @@
-use crate::jobs::types::{DestinationChain, DestinationKind};
+use crate::jobs::types::DestinationChain;
 use anyhow::{Context, Result};
 use bankai_sdk::Network;
 use std::env;
@@ -19,8 +19,9 @@ pub struct Config {
 pub struct DestinationChainConfig {
     pub chain: DestinationChain,
     pub rpc_url: String,
-    pub target_address: String,
+    pub contract_address: String,
     pub private_key: String,
+    pub account_address: Option<String>,
 }
 
 impl DestinationChainConfig {
@@ -28,12 +29,12 @@ impl DestinationChainConfig {
         self.chain.as_str()
     }
 
-    pub const fn chain_id(&self) -> u64 {
+    pub const fn chain_id(&self) -> &'static str {
         self.chain.chain_id()
     }
 
-    pub const fn kind(&self) -> DestinationKind {
-        self.chain.kind()
+    pub const fn is_evm(&self) -> bool {
+        self.chain.is_evm()
     }
 }
 
@@ -68,6 +69,7 @@ impl Config {
                 destination_chain_config(DestinationChain::BaseSepolia)?,
                 destination_chain_config(DestinationChain::OpSepolia)?,
                 destination_chain_config(DestinationChain::ArbitrumSepolia)?,
+                destination_chain_config(DestinationChain::StarknetSepolia)?,
                 destination_chain_config(DestinationChain::SolanaDevnet)?,
             ],
         })
@@ -75,18 +77,51 @@ impl Config {
 }
 
 fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainConfig> {
-    let prefix = chain.env_prefix();
+    if chain.is_evm() {
+        let prefix = chain.env_prefix();
+        return Ok(DestinationChainConfig {
+            chain,
+            rpc_url: required(&format!("{prefix}_RPC_URL"))?,
+            contract_address: required(&format!("{prefix}_REGISTRY_ADDRESS"))?,
+            private_key: required(&format!("{prefix}_PRIVATE_KEY"))?,
+            account_address: None,
+        });
+    }
+
+    if chain == DestinationChain::StarknetSepolia {
+        return Ok(DestinationChainConfig {
+            chain,
+            rpc_url: required_any(&["STARKNET_SEPOLIA_RPC_URL", "STARKNET_SEPOLIA_RPC"])?,
+            contract_address: required("STARKNET_SEPOLIA_REGISTRY_ADDRESS")?,
+            private_key: required_any(&["STARKNET_SEPOLIA_PRIVATE_KEY", "STARKNET_PRIVATE_KEY"])?,
+            account_address: Some(required_any(&[
+                "STARKNET_SEPOLIA_ACCOUNT_ADDRESS",
+                "STARKNET_ACCOUNT_ADDRESS",
+            ])?),
+        });
+    }
 
     Ok(DestinationChainConfig {
         chain,
-        rpc_url: required(&format!("{prefix}_RPC_URL"))?,
-        target_address: required(chain.target_address_env())?,
-        private_key: required(&format!("{prefix}_PRIVATE_KEY"))?,
+        rpc_url: required_any(&["SOLANA_DEVNET_RPC_URL", "SOLANA_DEVNET_RPC"])?,
+        contract_address: required("SOLANA_DEVNET_PROGRAM_ID")?,
+        private_key: required("SOLANA_DEVNET_PRIVATE_KEY")?,
+        account_address: None,
     })
 }
 
 fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} must be set"))
+}
+
+fn required_any(names: &[&str]) -> Result<String> {
+    for name in names {
+        if let Ok(value) = env::var(name) {
+            return Ok(value);
+        }
+    }
+
+    anyhow::bail!("one of {} must be set", names.join(", "))
 }
 
 fn optional_bool(name: &str) -> Result<Option<bool>> {

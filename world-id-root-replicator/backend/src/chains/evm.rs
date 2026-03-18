@@ -1,3 +1,5 @@
+use crate::chains::{SubmissionCheck, SubmissionClient};
+use crate::config::DestinationChainConfig;
 use crate::proving::sp1::load_proof;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
@@ -12,60 +14,43 @@ sol! {
     function submitRoot(bytes proofBytes, bytes publicValues) external;
 }
 
-pub enum SubmissionCheck {
-    Pending,
-    Confirmed,
-    Failed(String),
+pub struct EvmSubmitter {
+    destination: DestinationChainConfig,
 }
 
-#[async_trait]
-pub trait SubmissionClient: Send + Sync {
-    async fn submit_artifact(
-        &self,
-        registry_address: Address,
-        artifact_path: &str,
-    ) -> Result<String>;
-    async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck>;
-}
-
-pub struct BaseSepoliaSubmitter {
-    rpc_url: String,
-    private_key: String,
-    chain_id: u64,
-}
-
-impl BaseSepoliaSubmitter {
-    pub fn new(rpc_url: String, private_key: String, chain_id: u64) -> Self {
-        Self {
-            rpc_url,
-            private_key,
-            chain_id,
-        }
+impl EvmSubmitter {
+    pub fn new(destination: DestinationChainConfig) -> Self {
+        Self { destination }
     }
 
     async fn provider(&self) -> Result<impl Provider> {
         let signer: PrivateKeySigner = self
+            .destination
             .private_key
             .parse()
-            .context("parse Base Sepolia private key")?;
+            .with_context(|| format!("parse {} private key", self.destination.name()))?;
         let wallet = EthereumWallet::from(signer);
 
         ProviderBuilder::new()
-            .with_chain_id(self.chain_id)
+            .with_chain_id(
+                self.destination
+                    .chain
+                    .evm_chain_id()
+                    .context("missing EVM chain id for destination")?,
+            )
             .wallet(wallet)
-            .connect(self.rpc_url.as_str())
+            .connect(self.destination.rpc_url.as_str())
             .await
-            .context("connect Base Sepolia provider")
+            .with_context(|| format!("connect {} provider", self.destination.name()))
     }
 }
 
 #[async_trait]
-impl SubmissionClient for BaseSepoliaSubmitter {
-    async fn submit_artifact(
-        &self,
-        registry_address: Address,
-        artifact_path: &str,
-    ) -> Result<String> {
+impl SubmissionClient for EvmSubmitter {
+    async fn submit_artifact(&self, contract_address: &str, artifact_path: &str) -> Result<String> {
+        let registry_address: Address = contract_address
+            .parse()
+            .with_context(|| format!("parse {} registry address", self.destination.name()))?;
         let proof = load_proof(artifact_path)?;
         let call = submitRootCall {
             proofBytes: proof.bytes().into(),
@@ -79,7 +64,7 @@ impl SubmissionClient for BaseSepoliaSubmitter {
         let pending = provider
             .send_transaction(transaction)
             .await
-            .context("send Base Sepolia submitRoot transaction")?;
+            .with_context(|| format!("send {} submitRoot transaction", self.destination.name()))?;
 
         Ok(pending.tx_hash().to_string())
     }
@@ -89,7 +74,7 @@ impl SubmissionClient for BaseSepoliaSubmitter {
         let receipt = provider
             .get_transaction_receipt(tx_hash.parse()?)
             .await
-            .context("fetch Base Sepolia transaction receipt")?;
+            .with_context(|| format!("fetch {} transaction receipt", self.destination.name()))?;
 
         let Some(receipt) = receipt else {
             return Ok(SubmissionCheck::Pending);
@@ -99,7 +84,8 @@ impl SubmissionClient for BaseSepoliaSubmitter {
             Ok(SubmissionCheck::Confirmed)
         } else {
             Ok(SubmissionCheck::Failed(format!(
-                "Base Sepolia transaction {tx_hash} reverted"
+                "{} transaction {tx_hash} reverted",
+                self.destination.name()
             )))
         }
     }

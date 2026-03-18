@@ -1,11 +1,14 @@
 use crate::bankai::finality::{BankaiFinalityClient, FinalityClient};
 use crate::bankai::proof_bundle::{BankaiProofBundleClient, ProofBundleClient};
-use crate::chains::{build_submission_client, SubmissionCheck, SubmissionClient};
+use crate::chains::{
+    EvmSubmitter, SolanaSubmitter, StarknetSubmitter, SubmissionCheck, SubmissionClient,
+};
 use crate::config::{Config, DestinationChainConfig};
 use crate::db::{self, ActiveJob, ChainSubmission};
-use crate::jobs::types::{ChainSubmissionState, ReplicationJobState};
+use crate::jobs::types::{ChainSubmissionState, DestinationChain, ReplicationJobState};
 use crate::proving::sp1::{
-    root_hex_to_bytes, root_to_hex, ProofService, PublicValues, Sp1ProofService,
+    current_program_vkey, root_hex_to_bytes, root_to_hex, ProofService, PublicValues,
+    Sp1ProofService,
 };
 use crate::world_id::watcher::{RootWatcher, WorldIdWatcher};
 use anyhow::{Context, Result};
@@ -17,6 +20,8 @@ use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 const LOOP_INTERVAL: Duration = Duration::from_secs(5);
+const MAX_JOB_RPC_FAILURES: u32 = 5;
+const MAX_SUBMISSION_RPC_FAILURES: u32 = 5;
 
 pub struct Runner {
     pool: SqlitePool,
@@ -44,14 +49,23 @@ impl Runner {
         ));
         let proof_service = Arc::new(Sp1ProofService::new(PathBuf::from("artifacts/proofs")));
         let destinations = config.destination_chains;
+        let program_vkey = current_program_vkey();
         let submission_clients = destinations
             .iter()
             .cloned()
             .map(|destination| {
-                Ok((
-                    destination.name(),
-                    Arc::from(build_submission_client(destination)?) as Arc<dyn SubmissionClient>,
-                ))
+                let client: Arc<dyn SubmissionClient> = match destination.chain {
+                    DestinationChain::StarknetSepolia => Arc::new(StarknetSubmitter::new(
+                        destination.clone(),
+                        program_vkey.clone(),
+                    )),
+                    DestinationChain::SolanaDevnet => {
+                        Arc::new(SolanaSubmitter::new(destination.clone())?)
+                    }
+                    _ => Arc::new(EvmSubmitter::new(destination.clone())),
+                };
+
+                Ok((destination.name(), client))
             })
             .collect::<Result<HashMap<_, _>>>()?;
 
@@ -132,9 +146,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch Bankai finality"
                 );
-                db::mark_job_retryable(
-                    &self.pool,
-                    job.job_id,
+                self.mark_job_retryable_or_failed(
+                    &job,
                     ReplicationJobState::WaitingFinality,
                     &error.to_string(),
                 )
@@ -199,9 +212,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch exact Bankai proof bundle"
                 );
-                db::mark_job_retryable(
-                    &self.pool,
-                    job.job_id,
+                self.mark_job_retryable_or_failed(
+                    &job,
                     ReplicationJobState::ReadyToProve,
                     &error.to_string(),
                 )
@@ -248,9 +260,8 @@ impl Runner {
                 if next_state == ReplicationJobState::Failed {
                     db::mark_job_failed(&self.pool, job.job_id, &error.to_string()).await?;
                 } else {
-                    db::mark_job_retryable(
-                        &self.pool,
-                        job.job_id,
+                    self.mark_job_retryable_or_failed(
+                        &job,
                         ReplicationJobState::ReadyToProve,
                         &error.to_string(),
                     )
@@ -281,9 +292,8 @@ impl Runner {
         }
 
         let Some(artifact_path) = job.proof_artifact_ref.as_deref() else {
-            db::mark_job_retryable(
-                &self.pool,
-                job.job_id,
+            self.mark_job_retryable_or_failed(
+                &job,
                 ReplicationJobState::ReadyToProve,
                 "missing proof artifact ref for submission",
             )
@@ -341,7 +351,10 @@ impl Runner {
         submission: &ChainSubmission,
     ) -> Result<()> {
         let client = self.submission_client(&submission.chain_name)?;
-        match client.submit_artifact(&submission.target_address, artifact_path).await {
+        match client
+            .submit_artifact(&submission.registry_address, artifact_path)
+            .await
+        {
             Ok(tx_hash) => {
                 db::mark_submission_submitting(&self.pool, submission.submission_id, &tx_hash)
                     .await?;
@@ -359,9 +372,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to submit proof"
                 );
-                db::mark_submission_retryable(
-                    &self.pool,
-                    submission.submission_id,
+                self.mark_submission_retryable_or_failed(
+                    submission,
                     ChainSubmissionState::Pending,
                     &error.to_string(),
                 )
@@ -378,9 +390,8 @@ impl Runner {
         submission: &ChainSubmission,
     ) -> Result<()> {
         let Some(tx_hash) = submission.submission_tx_hash.as_deref() else {
-            db::mark_submission_retryable(
-                &self.pool,
-                submission.submission_id,
+            self.mark_submission_retryable_or_failed(
+                submission,
                 ChainSubmissionState::Pending,
                 "submission entered submitting state without a transaction hash",
             )
@@ -413,9 +424,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to confirm submission"
                 );
-                db::mark_submission_retryable(
-                    &self.pool,
-                    submission.submission_id,
+                self.mark_submission_retryable_or_failed(
+                    submission,
                     ChainSubmissionState::Submitting,
                     &error.to_string(),
                 )
@@ -489,12 +499,54 @@ impl Runner {
             .cloned()
             .with_context(|| format!("missing submission client for {chain_name}"))
     }
+
+    async fn mark_job_retryable_or_failed(
+        &self,
+        job: &ActiveJob,
+        state: ReplicationJobState,
+        message: &str,
+    ) -> Result<()> {
+        if job.job_retry_count + 1 >= MAX_JOB_RPC_FAILURES {
+            db::mark_job_failed_after_retry(
+                &self.pool,
+                job.job_id,
+                &retry_limit_message(MAX_JOB_RPC_FAILURES, message),
+            )
+            .await?;
+            return Ok(());
+        }
+
+        db::mark_job_retryable(&self.pool, job.job_id, state, message).await
+    }
+
+    async fn mark_submission_retryable_or_failed(
+        &self,
+        submission: &ChainSubmission,
+        state: ChainSubmissionState,
+        message: &str,
+    ) -> Result<()> {
+        if submission.submission_retry_count + 1 >= MAX_SUBMISSION_RPC_FAILURES {
+            db::mark_submission_failed_after_retry(
+                &self.pool,
+                submission.submission_id,
+                &retry_limit_message(MAX_SUBMISSION_RPC_FAILURES, message),
+            )
+            .await?;
+            return Ok(());
+        }
+
+        db::mark_submission_retryable(&self.pool, submission.submission_id, state, message).await
+    }
 }
 
 fn is_terminal_proving_error(error: &anyhow::Error) -> bool {
     error
         .to_string()
         .contains("decoded proof public values do not match observed root")
+}
+
+fn retry_limit_message(limit: u32, message: &str) -> String {
+    format!("retry limit reached after {limit} attempts: {message}")
 }
 
 #[cfg(test)]
@@ -594,7 +646,11 @@ mod tests {
 
     #[async_trait]
     impl SubmissionClient for FakeSubmissionClient {
-        async fn submit_artifact(&self, _target_address: &str, artifact_path: &str) -> Result<String> {
+        async fn submit_artifact(
+            &self,
+            _contract_address: &str,
+            artifact_path: &str,
+        ) -> Result<String> {
             if let Some(error) = &self.submit_error {
                 anyhow::bail!(error.clone());
             }
@@ -676,7 +732,7 @@ mod tests {
         assert!(!created_again.created);
         assert_eq!(observed_root_count, 1);
         assert_eq!(job_count, 1);
-        assert_eq!(submission_count, 4);
+        assert_eq!(submission_count, 5);
     }
 
     #[tokio::test]
@@ -762,6 +818,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let starknet = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let solana = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
             submit_error: None,
@@ -771,6 +832,10 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
@@ -807,6 +872,7 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
         assert_eq!(solana.submitted.lock().unwrap().len(), 1);
 
         runner.advance_once().await.unwrap();
@@ -835,6 +901,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let starknet = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let solana = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
             submit_error: None,
@@ -844,6 +915,10 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
 
@@ -877,11 +952,16 @@ mod tests {
             ChainSubmissionState::Submitting
         );
         assert_eq!(
+            submission_state(&submissions, "starknet-sepolia"),
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(
             submission_state(&submissions, "solana-devnet"),
             ChainSubmissionState::Submitting
         );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
         assert_eq!(solana.submitted.lock().unwrap().len(), 1);
     }
 
@@ -906,6 +986,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![]),
         });
+        let starknet = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![]),
+        });
         let solana = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
             submit_error: None,
@@ -915,6 +1000,10 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
 
@@ -958,12 +1047,17 @@ mod tests {
             ChainSubmissionState::Confirmed
         );
         assert_eq!(
+            submission_state(&submissions, "starknet-sepolia"),
+            ChainSubmissionState::Confirmed
+        );
+        assert_eq!(
             submission_state(&submissions, "solana-devnet"),
             ChainSubmissionState::Confirmed
         );
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
         assert_eq!(solana.submitted.lock().unwrap().len(), 1);
     }
 
@@ -988,6 +1082,11 @@ mod tests {
             submit_error: None,
             check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
         });
+        let starknet = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![Ok(SubmissionCheck::Pending)]),
+        });
         let solana = Arc::new(FakeSubmissionClient {
             submitted: Mutex::new(Vec::new()),
             submit_error: None,
@@ -997,6 +1096,10 @@ mod tests {
             ("base-sepolia", base.clone() as Arc<dyn SubmissionClient>),
             ("op-sepolia", op.clone() as Arc<dyn SubmissionClient>),
             ("arbitrum-sepolia", arb.clone() as Arc<dyn SubmissionClient>),
+            (
+                "starknet-sepolia",
+                starknet.clone() as Arc<dyn SubmissionClient>,
+            ),
             ("solana-devnet", solana.clone() as Arc<dyn SubmissionClient>),
         ]);
         let proof_service = Arc::new(FakeProofService {
@@ -1021,6 +1124,7 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
         assert_eq!(solana.submitted.lock().unwrap().len(), 1);
 
         let restarted = Runner::new_for_tests(
@@ -1038,6 +1142,7 @@ mod tests {
         assert_eq!(base.submitted.lock().unwrap().len(), 1);
         assert_eq!(op.submitted.lock().unwrap().len(), 1);
         assert_eq!(arb.submitted.lock().unwrap().len(), 1);
+        assert_eq!(starknet.submitted.lock().unwrap().len(), 1);
         assert_eq!(solana.submitted.lock().unwrap().len(), 1);
         assert_eq!(proof_service.prove_calls.load(Ordering::Relaxed), 1);
     }
@@ -1189,6 +1294,7 @@ mod tests {
             destination(DestinationChain::BaseSepolia),
             destination(DestinationChain::OpSepolia),
             destination(DestinationChain::ArbitrumSepolia),
+            destination(DestinationChain::StarknetSepolia),
             destination(DestinationChain::SolanaDevnet),
         ]
     }
@@ -1198,19 +1304,31 @@ mod tests {
             DestinationChain::BaseSepolia => "0123",
             DestinationChain::OpSepolia => "0456",
             DestinationChain::ArbitrumSepolia => "0789",
+            DestinationChain::StarknetSepolia => "0abc",
             DestinationChain::SolanaDevnet => "solana",
         };
 
         DestinationChainConfig {
             chain,
             rpc_url: "https://example.invalid".to_string(),
-            target_address: match chain {
+            contract_address: match chain {
+                DestinationChain::StarknetSepolia => {
+                    "0x04f213f87dd6eec0951c49ec9e2d577fabf843d7e022f33d04e6a25ff8954e61".to_string()
+                }
                 DestinationChain::SolanaDevnet => {
                     "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx".to_string()
                 }
                 _ => format!("0x000000000000000000000000000000000000{suffix}"),
             },
             private_key: "0x01".to_string(),
+            account_address: if chain == DestinationChain::StarknetSepolia {
+                Some(
+                    "0x04f213f87dd6eec0951c49ec9e2d577fabf843d7e022f33d04e6a25ff8954e61"
+                        .to_string(),
+                )
+            } else {
+                None
+            },
         }
     }
 
