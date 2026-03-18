@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use bankai_sdk::Network;
 use std::env;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -65,15 +66,63 @@ impl Config {
                 .unwrap_or(false),
             sp1_prover: required("SP1_PROVER")?,
             execution_rpc: required("EXECUTION_RPC")?,
-            destination_chains: vec![
-                destination_chain_config(DestinationChain::BaseSepolia)?,
-                destination_chain_config(DestinationChain::OpSepolia)?,
-                destination_chain_config(DestinationChain::ArbitrumSepolia)?,
-                destination_chain_config(DestinationChain::StarknetSepolia)?,
-                destination_chain_config(DestinationChain::SolanaDevnet)?,
-            ],
+            destination_chains: enabled_destination_chains()?
+                .into_iter()
+                .map(destination_chain_config)
+                .collect::<Result<Vec<_>>>()?,
         })
     }
+}
+
+fn enabled_destination_chains() -> Result<Vec<DestinationChain>> {
+    match env::var("ENABLED_DESTINATION_CHAINS") {
+        Ok(value) => parse_enabled_destination_chains(&value),
+        Err(env::VarError::NotPresent) => Ok(supported_destination_chains().to_vec()),
+        Err(error) => Err(error).context("failed to read ENABLED_DESTINATION_CHAINS"),
+    }
+}
+
+fn supported_destination_chains() -> &'static [DestinationChain] {
+    &[
+        DestinationChain::BaseSepolia,
+        DestinationChain::OpSepolia,
+        DestinationChain::ArbitrumSepolia,
+        DestinationChain::StarknetSepolia,
+        DestinationChain::SolanaDevnet,
+        DestinationChain::Chiado,
+        DestinationChain::MonadTestnet,
+        DestinationChain::HyperEvmTestnet,
+        DestinationChain::TempoTestnet,
+        DestinationChain::MegaEthTestnet,
+        DestinationChain::PlasmaTestnet,
+    ]
+}
+
+fn parse_enabled_destination_chains(value: &str) -> Result<Vec<DestinationChain>> {
+    let mut chains = Vec::new();
+
+    for raw in value.split(',') {
+        let name = raw.trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        let chain = DestinationChain::from_str(name).with_context(|| {
+            format!("unknown destination chain `{name}` in ENABLED_DESTINATION_CHAINS")
+        })?;
+
+        if !chains.contains(&chain) {
+            chains.push(chain);
+        }
+    }
+
+    if chains.is_empty() {
+        anyhow::bail!(
+            "ENABLED_DESTINATION_CHAINS must include at least one supported chain name"
+        );
+    }
+
+    Ok(chains)
 }
 
 fn destination_chain_config(chain: DestinationChain) -> Result<DestinationChainConfig> {
@@ -144,5 +193,85 @@ impl std::str::FromStr for BankaiNetwork {
             "local" => Ok(Self::Local),
             _ => anyhow::bail!("BANKAI_NETWORK must be `sepolia` or `local`"),
         }
+    }
+}
+
+impl FromStr for DestinationChain {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "base" | "base-sepolia" => Ok(Self::BaseSepolia),
+            "op" | "op-sepolia" | "optimism" | "optimism-sepolia" => Ok(Self::OpSepolia),
+            "arb" | "arbitrum" | "arb-sepolia" | "arbitrum-sepolia" => {
+                Ok(Self::ArbitrumSepolia)
+            }
+            "starknet" | "starknet-sepolia" => Ok(Self::StarknetSepolia),
+            "solana" | "solana-devnet" => Ok(Self::SolanaDevnet),
+            "chiado" | "gnosis" | "gnosis-chiado" => Ok(Self::Chiado),
+            "monad" | "monad-testnet" => Ok(Self::MonadTestnet),
+            "hyper" | "hyperevm" | "hyperevm-testnet" | "hyperliquid" => {
+                Ok(Self::HyperEvmTestnet)
+            }
+            "tempo" | "tempo-testnet" => Ok(Self::TempoTestnet),
+            "megaeth" | "megaeth-testnet" => Ok(Self::MegaEthTestnet),
+            "plasma" | "plasma-testnet" => Ok(Self::PlasmaTestnet),
+            _ => anyhow::bail!("unsupported destination chain: {value}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_enabled_destination_chains, DestinationChain};
+
+    #[test]
+    fn parse_enabled_destination_chains_accepts_exact_names_and_aliases() {
+        let chains =
+            parse_enabled_destination_chains("base-sepolia, op, monad, hyperevm, plasma").unwrap();
+
+        assert_eq!(
+            chains,
+            vec![
+                DestinationChain::BaseSepolia,
+                DestinationChain::OpSepolia,
+                DestinationChain::MonadTestnet,
+                DestinationChain::HyperEvmTestnet,
+                DestinationChain::PlasmaTestnet,
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_enabled_destination_chains_deduplicates_and_skips_empty_entries() {
+        let chains = parse_enabled_destination_chains("monad,, monad-testnet, chiado").unwrap();
+
+        assert_eq!(
+            chains,
+            vec![DestinationChain::MonadTestnet, DestinationChain::Chiado]
+        );
+    }
+
+    #[test]
+    fn parse_enabled_destination_chains_rejects_unknown_names() {
+        let error =
+            parse_enabled_destination_chains("base-sepolia, definitely-not-a-chain").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("unknown destination chain `definitely-not-a-chain`")
+        );
+    }
+
+    #[test]
+    fn parse_enabled_destination_chains_rejects_empty_selection() {
+        let error = parse_enabled_destination_chains(" , ").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("ENABLED_DESTINATION_CHAINS must include at least one supported chain")
+        );
     }
 }

@@ -43,6 +43,42 @@ const TARGET_CHAIN_METADATA: Record<
     targetLabel: "Program",
     txUrl: (hash) => `https://solscan.io/tx/${hash}?cluster=devnet`,
   },
+  chiado: {
+    addressBaseUrl: "https://gnosis-chiado.blockscout.com/address/",
+    label: "Chiado",
+    order: 3,
+    txBaseUrl: "https://gnosis-chiado.blockscout.com/tx/",
+  },
+  "monad-testnet": {
+    addressBaseUrl: "https://testnet.monadscan.com/address/",
+    label: "Monad",
+    order: 4,
+    txBaseUrl: "https://testnet.monadscan.com/tx/",
+  },
+  "hyperevm-testnet": {
+    addressBaseUrl: "https://testnet.purrsec.com/address/",
+    label: "HyperEVM",
+    order: 5,
+    txBaseUrl: "https://testnet.purrsec.com/tx/",
+  },
+  "tempo-testnet": {
+    addressBaseUrl: "https://explore.tempo.xyz/address/",
+    label: "Tempo",
+    order: 6,
+    txBaseUrl: "https://explore.tempo.xyz/tx/",
+  },
+  "megaeth-testnet": {
+    addressBaseUrl: "https://testnet-mega.etherscan.io/address/",
+    label: "MegaETH",
+    order: 7,
+    txBaseUrl: "https://testnet-mega.etherscan.io/tx/",
+  },
+  "plasma-testnet": {
+    addressBaseUrl: "https://testnet.plasmascan.to/address/",
+    label: "Plasma",
+    order: 8,
+    txBaseUrl: "https://testnet.plasmascan.to/tx/",
+  },
 };
 
 export function chainLabel(chainName: string) {

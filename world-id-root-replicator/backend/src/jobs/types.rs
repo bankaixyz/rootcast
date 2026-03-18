@@ -36,6 +36,12 @@ pub enum DestinationChain {
     ArbitrumSepolia,
     StarknetSepolia,
     SolanaDevnet,
+    Chiado,
+    MonadTestnet,
+    HyperEvmTestnet,
+    TempoTestnet,
+    MegaEthTestnet,
+    PlasmaTestnet,
 }
 
 impl DestinationChain {
@@ -46,6 +52,12 @@ impl DestinationChain {
             Self::ArbitrumSepolia => "421614",
             Self::StarknetSepolia => "0x534e5f5345504f4c4941",
             Self::SolanaDevnet => "devnet",
+            Self::Chiado => "10200",
+            Self::MonadTestnet => "10143",
+            Self::HyperEvmTestnet => "998",
+            Self::TempoTestnet => "42431",
+            Self::MegaEthTestnet => "6343",
+            Self::PlasmaTestnet => "9746",
         }
     }
 
@@ -54,6 +66,12 @@ impl DestinationChain {
             Self::BaseSepolia => Some(84_532),
             Self::OpSepolia => Some(11_155_420),
             Self::ArbitrumSepolia => Some(421_614),
+            Self::Chiado => Some(10_200),
+            Self::MonadTestnet => Some(10_143),
+            Self::HyperEvmTestnet => Some(998),
+            Self::TempoTestnet => Some(42_431),
+            Self::MegaEthTestnet => Some(6_343),
+            Self::PlasmaTestnet => Some(9_746),
             Self::StarknetSepolia | Self::SolanaDevnet => None,
         }
     }
@@ -65,6 +83,12 @@ impl DestinationChain {
             Self::ArbitrumSepolia => "arbitrum-sepolia",
             Self::StarknetSepolia => "starknet-sepolia",
             Self::SolanaDevnet => "solana-devnet",
+            Self::Chiado => "chiado",
+            Self::MonadTestnet => "monad-testnet",
+            Self::HyperEvmTestnet => "hyperevm-testnet",
+            Self::TempoTestnet => "tempo-testnet",
+            Self::MegaEthTestnet => "megaeth-testnet",
+            Self::PlasmaTestnet => "plasma-testnet",
         }
     }
 
@@ -75,12 +99,26 @@ impl DestinationChain {
             Self::ArbitrumSepolia => "ARBITRUM_SEPOLIA",
             Self::StarknetSepolia => "STARKNET_SEPOLIA",
             Self::SolanaDevnet => "SOLANA_DEVNET",
+            Self::Chiado => "CHIADO",
+            Self::MonadTestnet => "MONAD_TESTNET",
+            Self::HyperEvmTestnet => "HYPEREVM_TESTNET",
+            Self::TempoTestnet => "TEMPO_TESTNET",
+            Self::MegaEthTestnet => "MEGAETH_TESTNET",
+            Self::PlasmaTestnet => "PLASMA_TESTNET",
         }
     }
 
     pub const fn is_evm(self) -> bool {
         match self {
-            Self::BaseSepolia | Self::OpSepolia | Self::ArbitrumSepolia => true,
+            Self::BaseSepolia
+            | Self::OpSepolia
+            | Self::ArbitrumSepolia
+            | Self::Chiado
+            | Self::MonadTestnet
+            | Self::HyperEvmTestnet
+            | Self::TempoTestnet
+            | Self::MegaEthTestnet
+            | Self::PlasmaTestnet => true,
             Self::StarknetSepolia | Self::SolanaDevnet => false,
         }
     }
