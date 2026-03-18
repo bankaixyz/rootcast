@@ -1,0 +1,120 @@
+import type { ReplicationTarget, RootSnapshot } from "@/lib/api";
+import {
+  chainLabel,
+  chainOrder,
+  chainTxUrl,
+  sourceTxUrl,
+} from "@/lib/chain-metadata";
+import { formatBlock, formatTimestamp, shortHash } from "@/lib/format";
+
+type Props = {
+  roots: RootSnapshot[];
+};
+
+export function ReplicationHistoryTable({ roots }: Props) {
+  const completedRoots = roots.filter((root) =>
+    root.targets.some((t) => t.tx_hash),
+  );
+
+  return (
+    <section className="history">
+      <div className="history__header">
+        <span className="history__eyebrow">Replication log</span>
+        <h2 className="history__title">Past replications</h2>
+      </div>
+
+      {completedRoots.length === 0 ? (
+        <p className="history__empty">
+          No completed replications yet. Rows will appear here once the first
+          root has been relayed to at least one destination chain.
+        </p>
+      ) : (
+        <div className="history__list">
+          {completedRoots.map((root) => (
+            <ReplicationCard key={root.job_id} root={root} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function ReplicationCard({ root }: { root: RootSnapshot }) {
+  const sortedTargets = [...root.targets]
+    .filter((t) => t.tx_hash)
+    .sort((a, b) => chainOrder(a.chain_name) - chainOrder(b.chain_name));
+
+  const confirmed = sortedTargets.filter(
+    (t) => t.display_state === "confirmed",
+  ).length;
+  const failed = sortedTargets.filter(
+    (t) => t.display_state === "failed",
+  ).length;
+
+  return (
+    <article className="history-card">
+      <div className="history-card__top">
+        <div className="history-card__source">
+          <span className="history-card__label">Tx:</span>
+          <a
+            className="history-card__tx"
+            href={sourceTxUrl(root.source_tx_hash)}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {root.source_tx_hash}
+          </a>
+          <span className="history-card__sep">·</span>
+          <span className="history-card__block">
+            Block {formatBlock(root.source_block_number)}
+          </span>
+          <span className="history-card__sep">·</span>
+          <span className="history-card__time">
+            {formatTimestamp(root.observed_at)}
+          </span>
+        </div>
+        <span className="history-card__summary">
+          {confirmed > 0 && (
+            <span className="history-card__count history-card__count--ok">
+              {confirmed} confirmed
+            </span>
+          )}
+          {failed > 0 && (
+            <span className="history-card__count history-card__count--fail">
+              {failed} failed
+            </span>
+          )}
+        </span>
+      </div>
+
+      <div className="history-card__grid">
+        {sortedTargets.map((target) => (
+          <TargetChip key={target.chain_name} target={target} />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function TargetChip({ target }: { target: ReplicationTarget }) {
+  const fail = target.display_state === "failed";
+
+  return (
+    <a
+      className={`history-chip ${fail ? "history-chip--fail" : ""}`}
+      href={chainTxUrl(target.chain_name, target.tx_hash!)}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <span
+        className={`history-chip__dot ${fail ? "history-chip__dot--fail" : "history-chip__dot--ok"}`}
+      />
+      <span className="history-chip__chain">
+        {chainLabel(target.chain_name)}
+      </span>
+      <span className="history-chip__hash">
+        {shortHash(target.tx_hash!, 6, 4)}
+      </span>
+    </a>
+  );
+}

@@ -14,7 +14,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "World ID Root Replicator",
+  title: "Rootcast — World ID",
   description:
     "Read-only observability surface for World ID root replication across EVM targets.",
 };

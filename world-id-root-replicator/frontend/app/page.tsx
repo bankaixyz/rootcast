@@ -1,31 +1,17 @@
-import { AutoRefresh } from "@/components/auto-refresh";
-import { ReplicationTopology } from "@/components/replication-topology";
-import { getDashboardData } from "@/lib/api";
+import { LandingPage } from "@/components/landing-page";
+import { getLandingData } from "@/lib/api";
+import type { RootSnapshot } from "@/lib/api";
 
 export default async function HomePage() {
-  let snapshot: Awaited<ReturnType<typeof getDashboardData>>["snapshot"] = null;
-  let chains: Awaited<ReturnType<typeof getDashboardData>>["chains"] = [];
-  let errorMessage: string | null = null;
+  let latestCompleted: RootSnapshot | null = null;
 
   try {
-    const data = await getDashboardData();
-    snapshot = data.snapshot;
-    chains = data.chains;
-  } catch (error) {
-    errorMessage =
-      error instanceof Error
-        ? error.message
-        : "The frontend could not reach the backend API.";
+    const data = await getLandingData();
+    latestCompleted =
+      data.roots.find((r) => r.targets.some((t) => t.tx_hash)) ?? null;
+  } catch {
+    // API unreachable — render with static fallback
   }
 
-  return (
-    <>
-      <AutoRefresh intervalMs={12000} />
-      <ReplicationTopology
-        chains={chains}
-        errorMessage={errorMessage}
-        snapshot={snapshot}
-      />
-    </>
-  );
+  return <LandingPage snapshot={latestCompleted} />;
 }

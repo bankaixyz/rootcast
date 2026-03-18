@@ -101,14 +101,16 @@ async function fetchJson<T>(path: string): Promise<T> {
 }
 
 export async function getLandingData() {
-  const [status, latest] = await Promise.all([
+  const [status, latest, rootsRes] = await Promise.all([
     fetchJson<StatusResponse>("/api/status"),
     fetchJson<LatestRootResponse>("/api/roots/latest"),
+    fetchJson<RootsResponse>("/api/roots"),
   ]);
 
   return {
     status,
     snapshot: latest.snapshot,
+    roots: rootsRes.roots,
   };
 }
 

@@ -20,12 +20,14 @@ import {
 } from "@/lib/chain-metadata";
 import { formatBlock, shortHash } from "@/lib/format";
 
-const TARGET_GAP = 14;
+const TARGET_GAP = 10;
 
 type ReplicationTopologyProps = {
   snapshot: RootSnapshot | null;
   chains: ChainStatus[];
   errorMessage?: string | null;
+  hideHeader?: boolean;
+  headerContent?: ReactNode;
 };
 
 type TopologyTarget = {
@@ -50,11 +52,14 @@ export function ReplicationTopology({
   snapshot,
   chains,
   errorMessage,
+  hideHeader = false,
+  headerContent,
 }: ReplicationTopologyProps) {
   const targets = buildTargets(chains, snapshot, Boolean(errorMessage));
   const sourceState = deriveSourceState(snapshot);
   const finalized = Boolean(snapshot?.bankai_finalized_at);
   const showStageContext = Boolean(errorMessage) || snapshot?.job_state !== "completed";
+  const stageNumber = deriveStageNumber(snapshot, errorMessage);
   const stageLabel = errorMessage
     ? "Backend unreachable"
     : snapshot?.stage_label ?? "Watching for the next root update";
@@ -62,6 +67,7 @@ export function ReplicationTopology({
     ? errorMessage
     : snapshot?.stage_description ??
       "The topology stays in place and fills in as soon as the next L1 root update is observed.";
+  const stageTone = errorMessage ? "error" : "active";
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLElement | null>(null);
@@ -127,12 +133,16 @@ export function ReplicationTopology({
     return () => ro.disconnect();
   }, []);
 
-  // Wheel-based scrolling on the entire canvas
+  // Wheel-based scrolling on the target list; pass through to page at limits
   useEffect(() => {
     const el = canvasRef.current;
     if (!el || !canScroll) return;
 
     const handler = (e: WheelEvent) => {
+      const atTop = scrollOffset <= 0 && e.deltaY < 0;
+      const atBottom = scrollOffset >= maxScroll && e.deltaY > 0;
+      if (atTop || atBottom) return;
+
       e.preventDefault();
       setScrollOffset((prev) =>
         Math.max(0, Math.min(maxScroll, prev + e.deltaY)),
@@ -141,7 +151,7 @@ export function ReplicationTopology({
 
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, [canScroll, maxScroll]);
+  }, [canScroll, maxScroll, scrollOffset]);
 
   const active = Boolean(snapshot);
   const hubY = canvasHeight / 2;
@@ -162,25 +172,33 @@ export function ReplicationTopology({
 
   return (
     <main className="topology-page">
-      <header className="topology-header">
-        <div className="topology-header__copy">
-          <span className="topology-header__eyebrow">World ID Root Replicator</span>
-          <h1 className="topology-header__title">World ID Replication</h1>
-        </div>
-
-        {showStageContext ? (
-          <div className="topology-header__status">
-            <span className="topology-header__stage">{stageLabel}</span>
-            <p className="topology-header__description">{stageDescription}</p>
+      {!hideHeader && (
+        <header className="topology-header">
+          <div className="topology-header__copy">
+            <span className="topology-header__eyebrow">World ID</span>
+            <h1 className="topology-header__title">Rootcast</h1>
           </div>
-        ) : null}
-      </header>
+        </header>
+      )}
 
       <section className="topology-card">
+        {headerContent}
         <section
           className="topology-canvas"
           ref={canvasRef}
         >
+          <div className="source-column">
+            {!hideHeader && showStageContext ? (
+              <div className={`stage-context stage-context--${stageTone}`}>
+                <div className="stage-context__header">
+                  <span className="stage-context__step">Step {stageNumber} of 4</span>
+                  <span className="stage-context__dot" />
+                </div>
+                <span className="stage-context__label">{stageLabel}</span>
+                <p className="stage-context__description">{stageDescription}</p>
+              </div>
+            ) : null}
+
           <article
             className="source-panel"
             ref={(el) => { sourceRef.current = el; }}
@@ -259,6 +277,7 @@ export function ReplicationTopology({
               </span>
             </div>
           </article>
+          </div>
 
           {/* SVG flow overlay — absolutely positioned across the full canvas */}
           <svg
@@ -425,6 +444,27 @@ export function ReplicationTopology({
       </section>
     </main>
   );
+}
+
+function deriveStageNumber(
+  snapshot: RootSnapshot | null,
+  errorMessage?: string | null,
+): number {
+  if (errorMessage || !snapshot) return 1;
+
+  switch (snapshot.job_state) {
+    case "waiting_finality":
+      return 2;
+    case "ready_to_prove":
+    case "proof_in_progress":
+      return 3;
+    case "proof_ready":
+    case "submitting":
+    case "failed":
+      return 4;
+    default:
+      return 1;
+  }
 }
 
 function deriveSourceState(snapshot: RootSnapshot | null) {

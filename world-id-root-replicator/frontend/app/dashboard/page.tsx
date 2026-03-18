@@ -1,16 +1,18 @@
 import { AutoRefresh } from "@/components/auto-refresh";
-import { ReplicationTopology } from "@/components/replication-topology";
+import { DashboardPage } from "@/components/dashboard-page";
 import { getDashboardData } from "@/lib/api";
 
-export default async function DashboardPage() {
+export default async function DashboardRoute() {
   let snapshot: Awaited<ReturnType<typeof getDashboardData>>["snapshot"] = null;
   let chains: Awaited<ReturnType<typeof getDashboardData>>["chains"] = [];
+  let roots: Awaited<ReturnType<typeof getDashboardData>>["roots"] = [];
   let errorMessage: string | null = null;
 
   try {
     const data = await getDashboardData();
     snapshot = data.snapshot;
     chains = data.chains;
+    roots = data.roots;
   } catch (error) {
     errorMessage =
       error instanceof Error
@@ -21,10 +23,11 @@ export default async function DashboardPage() {
   return (
     <>
       <AutoRefresh intervalMs={12000} />
-      <ReplicationTopology
-        chains={chains}
-        errorMessage={errorMessage}
+      <DashboardPage
         snapshot={snapshot}
+        chains={chains}
+        roots={roots}
+        errorMessage={errorMessage}
       />
     </>
   );

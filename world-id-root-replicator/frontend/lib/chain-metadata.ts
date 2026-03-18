@@ -8,34 +8,6 @@ const TARGET_CHAIN_METADATA: Record<
     txUrl: (hash: string) => string;
   }
 > = {
-  "arbitrum-sepolia": {
-    addressUrl: (address) => `https://sepolia.arbiscan.io/address/${address}`,
-    label: "Arbitrum",
-    order: 10,
-    targetLabel: "Registry",
-    txUrl: (hash) => `https://sepolia.arbiscan.io/tx/${hash}`,
-  },
-  "base-sepolia": {
-    addressUrl: (address) => `https://sepolia.basescan.org/address/${address}`,
-    label: "Base",
-    order: 9,
-    targetLabel: "Registry",
-    txUrl: (hash) => `https://sepolia.basescan.org/tx/${hash}`,
-  },
-  "op-sepolia": {
-    addressUrl: (address) => `https://sepolia-optimism.etherscan.io/address/${address}`,
-    label: "OP",
-    order: 8,
-    targetLabel: "Registry",
-    txUrl: (hash) => `https://sepolia-optimism.etherscan.io/tx/${hash}`,
-  },
-  "starknet-sepolia": {
-    addressUrl: (address) => `https://sepolia.voyager.online/contract/${address}`,
-    label: "Starknet",
-    order: 4,
-    targetLabel: "Contract",
-    txUrl: (hash) => `https://sepolia.voyager.online/tx/${hash}`,
-  },
   "solana-devnet": {
     addressUrl: (address) => `https://solscan.io/account/${address}?cluster=devnet`,
     label: "Solana",
@@ -57,19 +29,19 @@ const TARGET_CHAIN_METADATA: Record<
     targetLabel: "Registry",
     txUrl: (hash) => `https://testnet.monadscan.com/tx/${hash}`,
   },
-  "hyperevm-testnet": {
-    addressUrl: (address) => `https://testnet.purrsec.com/address/${address}`,
-    label: "HyperEVM",
-    order: 7,
-    targetLabel: "Registry",
-    txUrl: (hash) => `https://testnet.purrsec.com/tx/${hash}`,
-  },
   "tempo-testnet": {
     addressUrl: (address) => `https://explore.testnet.tempo.xyz/address/${address}`,
     label: "Tempo",
     order: 3,
     targetLabel: "Registry",
     txUrl: (hash) => `https://explore.testnet.tempo.xyz/tx/${hash}`,
+  },
+  "starknet-sepolia": {
+    addressUrl: (address) => `https://sepolia.voyager.online/contract/${address}`,
+    label: "Starknet",
+    order: 4,
+    targetLabel: "Contract",
+    txUrl: (hash) => `https://sepolia.voyager.online/tx/${hash}`,
   },
   "megaeth-testnet": {
     addressUrl: (address) => `https://testnet-mega.etherscan.io/address/${address}`,
@@ -84,6 +56,34 @@ const TARGET_CHAIN_METADATA: Record<
     order: 6,
     targetLabel: "Registry",
     txUrl: (hash) => `https://testnet.plasmascan.to/tx/${hash}`,
+  },
+  "hyperevm-testnet": {
+    addressUrl: (address) => `https://testnet.purrsec.com/address/${address}`,
+    label: "HyperEVM",
+    order: 7,
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://testnet.purrsec.com/tx/${hash}`,
+  },
+  "op-sepolia": {
+    addressUrl: (address) => `https://sepolia-optimism.etherscan.io/address/${address}`,
+    label: "OP",
+    order: 8,
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia-optimism.etherscan.io/tx/${hash}`,
+  },
+  "base-sepolia": {
+    addressUrl: (address) => `https://sepolia.basescan.org/address/${address}`,
+    label: "Base",
+    order: 9,
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia.basescan.org/tx/${hash}`,
+  },
+  "arbitrum-sepolia": {
+    addressUrl: (address) => `https://sepolia.arbiscan.io/address/${address}`,
+    label: "Arbitrum",
+    order: 10,
+    targetLabel: "Registry",
+    txUrl: (hash) => `https://sepolia.arbiscan.io/tx/${hash}`,
   },
 };
 
