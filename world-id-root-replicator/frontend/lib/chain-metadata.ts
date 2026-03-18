@@ -65,11 +65,11 @@ const TARGET_CHAIN_METADATA: Record<
     txUrl: (hash) => `https://testnet.purrsec.com/tx/${hash}`,
   },
   "tempo-testnet": {
-    addressUrl: (address) => `https://explore.tempo.xyz/address/${address}`,
+    addressUrl: (address) => `https://explore.testnet.tempo.xyz/address/${address}`,
     label: "Tempo",
     order: 3,
     targetLabel: "Registry",
-    txUrl: (hash) => `https://explore.tempo.xyz/tx/${hash}`,
+    txUrl: (hash) => `https://explore.testnet.tempo.xyz/tx/${hash}`,
   },
   "megaeth-testnet": {
     addressUrl: (address) => `https://testnet-mega.etherscan.io/address/${address}`,

@@ -221,7 +221,7 @@ fn pending_display_state(snapshot: &JobSnapshot) -> (&'static str, Option<String
     match snapshot.job_state {
         ReplicationJobState::WaitingFinality => (
             "blocked",
-            Some("Waiting for Bankai finality on the exact L1 source block".to_string()),
+            Some("Waiting for L1 finality on the exact L1 source block".to_string()),
         ),
         ReplicationJobState::ReadyToProve | ReplicationJobState::ProofInProgress => (
             "blocked",
@@ -253,9 +253,9 @@ fn pending_display_state(snapshot: &JobSnapshot) -> (&'static str, Option<String
 fn stage(snapshot: &JobSnapshot) -> StageInfo {
     match snapshot.job_state {
         ReplicationJobState::WaitingFinality => StageInfo {
-            label: "Waiting for Bankai finality",
+            label: "Waiting for L1 finality",
             description:
-                "The World ID root was submitted to Ethereum Sepolia, but the exact source block is not yet finalized in Bankai's finalized view."
+                "The World ID root was submitted to Ethereum Sepolia, but the exact source block is not yet finalized."
                     .to_string(),
             blocked_by: Some("bankai_finality"),
         },

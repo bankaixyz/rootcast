@@ -15,14 +15,15 @@ The Solana target mirrors the EVM registry at a functional level:
 
 - `programs/world-id-root-registry-solana/` contains the Anchor program
 - `tests/root-registry.ts` contains Anchor-side tests
-- `script/deploy_registry.sh` deploys the program to Solana Devnet
+- `script/deploy.sh` deploys the program to Solana Devnet and initializes the
+  registry PDA
 - `script/initialize_registry.sh` initializes the registry PDA
 - `script/preflight.sh` validates local env and prints derived addresses
 
 ## Environment
 
-The scripts read these env variables from `../.env` when present, or from your
-current shell when you export them directly:
+The scripts read these env variables from the repo root `.env` file when
+present, or from your current shell when you export them directly:
 
 - `SOLANA_DEVNET_RPC_URL`
 - `SOLANA_DEVNET_PRIVATE_KEY`
@@ -42,7 +43,6 @@ accept a base58-encoded keypair string.
 Build the program:
 
 ```bash
-cd solana
 anchor build
 ```
 
@@ -52,20 +52,21 @@ Run the preflight checks:
 ./script/preflight.sh
 ```
 
-Deploy to Devnet:
+Deploy and initialize through the top-level contract entrypoint:
 
 ```bash
-./script/deploy_registry.sh
+../deploy.sh --chain solana-devnet
 ```
 
-Your deployer wallet needs enough Devnet SOL to cover program rent and
-transaction fees.
-
-Initialize the registry PDA:
+If you need the package-specific helper directly, build first and then deploy:
 
 ```bash
-./script/initialize_registry.sh
+anchor build
+./script/deploy.sh --chain solana-devnet
 ```
+
+Your deployer wallet needs enough Devnet SOL to cover program rent,
+transaction fees, and the initialization transaction.
 
 ## Current Devnet deployment
 

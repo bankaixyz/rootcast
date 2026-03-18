@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-world_id_root_registry_solana = "CGPJkHwUYwubDNoaLwEMMNqHcHkKz3wB3SKb2ST4i2G1"
+world_id_root_registry_solana = "2xuveg4Aeuhhhy67DMTRfJfQE5MK7iPF2F4gCAFGM7N7"
 
 [programs.localnet]
 world_id_root_registry_solana = "HpgNxwdekXixEW6ZzTPsjhhFx46fpfoC7ruJvsinPYHx"

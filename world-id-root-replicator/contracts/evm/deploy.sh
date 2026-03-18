@@ -3,9 +3,9 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CONTRACTS_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-WORKSPACE_DIR=$(cd "$CONTRACTS_DIR/.." && pwd)
-ENV_FILE="$WORKSPACE_DIR/.env"
+CONTRACTS_DIR="$SCRIPT_DIR"
+REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
   set -a
@@ -18,16 +18,23 @@ log() {
   printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
 }
 
+warn() {
+  printf '[%s] Warning: %s\n' "$(date '+%H:%M:%S')" "$*" >&2
+}
+
 usage() {
   cat <<'EOF'
-Usage: deploy_registry.sh [--chain CHAIN] [--verify] [--address ADDRESS] [--verifier ADDRESS] [--program-vkey BYTES32]
+Usage: deploy.sh [--chain CHAIN] [--verify] [--address ADDRESS] [--verifier ADDRESS] [--program-vkey BYTES32]
 
-Deploy `WorldIdRootRegistry` to an EVM testnet using the env in `../.env`.
+Deploy `WorldIdRootRegistry` to one EVM destination chain.
 
 Options:
-  --chain CHAIN        Target chain: base, op, arb, chiado, monad, hyperevm, tempo, megaeth, plasma.
+  --chain CHAIN        Target chain: base-sepolia, op-sepolia, arbitrum-sepolia,
+                       chiado, monad-testnet, hyperevm-testnet, tempo-testnet,
+                       megaeth-testnet, or plasma-testnet.
   --verify             Verify the deployed contract after deploy.
-  --address ADDRESS    Use an existing deployment address. Skips deploy and verifies that address.
+  --address ADDRESS    Use an existing deployment address. Skips deploy and
+                       verifies that address.
   --verifier ADDRESS   Override the SP1 verifier address.
   --program-vkey VKEY  Override the SP1 program vkey.
   --help               Show this message.
@@ -51,25 +58,20 @@ Environment:
   MEGAETH_TESTNET_PRIVATE_KEY
   PLASMA_TESTNET_RPC_URL
   PLASMA_TESTNET_PRIVATE_KEY
-  PROGRAM_VKEY            Required unless passed with --program-vkey
-  ETHERSCAN_API_KEY         Required to verify on Base/OP/Arbitrum and MegaETH
-  MONADSCAN_API_KEY         Preferred Monadscan API key for Monad verification
-  PLASMA_TESTNET_API_KEY    Preferred PlasmaScan API key for Plasma verification
-  CHIADO_SP1_VERIFIER_ADDRESS Optional Chiado verifier override
-  MONAD_TESTNET_SP1_VERIFIER_ADDRESS Optional Monad verifier override
-  HYPEREVM_TESTNET_SP1_VERIFIER_ADDRESS Optional HyperEVM verifier override
-  TEMPO_TESTNET_SP1_VERIFIER_ADDRESS Optional Tempo verifier override
-  MEGAETH_TESTNET_SP1_VERIFIER_ADDRESS Optional MegaETH verifier override
-  PLASMA_TESTNET_SP1_VERIFIER_ADDRESS Optional Plasma verifier override
-  SP1_VERIFIER_ADDRESS       Optional default override
-
-Defaults:
-  verifier: v5 Groth16 default on Base/OP/Arbitrum Sepolia, explicit on the custom testnets
-  program vkey: read from PROGRAM_VKEY
+  PROGRAM_VKEY
+  ETHERSCAN_API_KEY
+  PLASMA_TESTNET_API_KEY
+  CHIADO_SP1_VERIFIER_ADDRESS
+  MONAD_TESTNET_SP1_VERIFIER_ADDRESS
+  HYPEREVM_TESTNET_SP1_VERIFIER_ADDRESS
+  TEMPO_TESTNET_SP1_VERIFIER_ADDRESS
+  MEGAETH_TESTNET_SP1_VERIFIER_ADDRESS
+  PLASMA_TESTNET_SP1_VERIFIER_ADDRESS
+  SP1_VERIFIER_ADDRESS
 EOF
 }
 
-CHAIN=base
+CHAIN=base-sepolia
 VERIFY=0
 EXISTING_ADDRESS=
 VERIFIER_ADDRESS=
@@ -127,8 +129,10 @@ if [[ -n "$EXISTING_ADDRESS" && "$VERIFY" -ne 1 ]]; then
   exit 1
 fi
 
+VERIFY_URL=
+
 case "$CHAIN" in
-  base|base-sepolia)
+  base-sepolia)
     CHAIN_NAME="Base Sepolia"
     CHAIN_ID=84532
     RPC_VAR="BASE_SEPOLIA_RPC_URL"
@@ -139,7 +143,7 @@ case "$CHAIN" in
     VERIFY_API_KEY_REQUIRED=1
     VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  op|op-sepolia|optimism|optimism-sepolia)
+  op-sepolia)
     CHAIN_NAME="OP Sepolia"
     CHAIN_ID=11155420
     RPC_VAR="OP_SEPOLIA_RPC_URL"
@@ -150,7 +154,7 @@ case "$CHAIN" in
     VERIFY_API_KEY_REQUIRED=1
     VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  arb|arbitrum|arb-sepolia|arbitrum-sepolia)
+  arbitrum-sepolia)
     CHAIN_NAME="Arbitrum Sepolia"
     CHAIN_ID=421614
     RPC_VAR="ARBITRUM_SEPOLIA_RPC_URL"
@@ -161,7 +165,7 @@ case "$CHAIN" in
     VERIFY_API_KEY_REQUIRED=1
     VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  chiado|gnosis|gnosis-chiado)
+  chiado)
     CHAIN_NAME="Gnosis Chiado"
     CHAIN_ID=10200
     RPC_VAR="CHIADO_RPC_URL"
@@ -173,19 +177,19 @@ case "$CHAIN" in
     VERIFY_API_KEY_REQUIRED=0
     VERIFY_API_KEY_VARS=()
     ;;
-  monad|monad-testnet)
+  monad-testnet)
     CHAIN_NAME="Monad Testnet"
     CHAIN_ID=10143
     RPC_VAR="MONAD_TESTNET_RPC_URL"
     KEY_VAR="MONAD_TESTNET_PRIVATE_KEY"
     REGISTRY_VAR="MONAD_TESTNET_REGISTRY_ADDRESS"
-    VERIFY_LABEL="Monadscan"
-    VERIFY_KIND="etherscan"
-    VERIFY_URL="https://api.monadscan.com/api"
-    VERIFY_API_KEY_REQUIRED=1
-    VERIFY_API_KEY_VARS=(MONADSCAN_API_KEY ETHERSCAN_API_KEY)
+    VERIFY_LABEL="Sourcify"
+    VERIFY_KIND="sourcify"
+    VERIFY_URL="https://sourcify.dev/server"
+    VERIFY_API_KEY_REQUIRED=0
+    VERIFY_API_KEY_VARS=()
     ;;
-  hyperevm|hyperevm-testnet|hyper|hyperliquid)
+  hyperevm-testnet)
     CHAIN_NAME="HyperEVM Testnet"
     CHAIN_ID=998
     RPC_VAR="HYPEREVM_TESTNET_RPC_URL"
@@ -195,9 +199,9 @@ case "$CHAIN" in
     VERIFY_KIND="sourcify"
     VERIFY_URL="https://sourcify.parsec.finance/verify"
     VERIFY_API_KEY_REQUIRED=0
-    VERIFY_API_KEY_VARS=()
+    VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  tempo|tempo-testnet)
+  tempo-testnet)
     CHAIN_NAME="Tempo Testnet"
     CHAIN_ID=42431
     RPC_VAR="TEMPO_TESTNET_RPC_URL"
@@ -207,9 +211,9 @@ case "$CHAIN" in
     VERIFY_KIND="sourcify"
     VERIFY_URL="https://contracts.tempo.xyz"
     VERIFY_API_KEY_REQUIRED=0
-    VERIFY_API_KEY_VARS=()
+    VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  megaeth|megaeth-testnet)
+  megaeth-testnet)
     CHAIN_NAME="MegaETH Testnet"
     CHAIN_ID=6343
     RPC_VAR="MEGAETH_TESTNET_RPC_URL"
@@ -221,7 +225,7 @@ case "$CHAIN" in
     VERIFY_API_KEY_REQUIRED=1
     VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
-  plasma|plasma-testnet)
+  plasma-testnet)
     CHAIN_NAME="Plasma Testnet"
     CHAIN_ID=9746
     RPC_VAR="PLASMA_TESTNET_RPC_URL"
@@ -231,7 +235,7 @@ case "$CHAIN" in
     VERIFY_KIND="etherscan"
     VERIFY_URL="https://testnet.plasmascan.to/api"
     VERIFY_API_KEY_REQUIRED=1
-    VERIFY_API_KEY_VARS=(PLASMA_TESTNET_API_KEY ETHERSCAN_API_KEY)
+    VERIFY_API_KEY_VARS=(ETHERSCAN_API_KEY)
     ;;
   *)
     echo "Unsupported chain: $CHAIN" >&2
@@ -291,7 +295,7 @@ if [[ -z "$PROGRAM_VKEY" ]]; then
 PROGRAM_VKEY is not set.
 
 Generate it with:
-  cd "$WORKSPACE_DIR"
+  cd "$REPO_ROOT"
   cargo run -q -p world-id-root-replicator-backend --bin print_program_vkey
 
 Then export it, for example:
@@ -341,6 +345,13 @@ else
 fi
 
 if [[ "$VERIFY" -eq 1 ]]; then
+  case "$CHAIN" in
+    monad-testnet|hyperevm-testnet|tempo-testnet|megaeth-testnet|plasma-testnet)
+      warn "verification is currently unsupported for $CHAIN; skipping verification"
+      exit 0
+      ;;
+  esac
+
   VERIFY_API_KEY=
   if [[ ${#VERIFY_API_KEY_VARS[@]} -gt 0 ]]; then
     VERIFY_API_KEY=$(first_set_env "${VERIFY_API_KEY_VARS[@]}" || true)
@@ -371,7 +382,10 @@ if [[ "$VERIFY" -eq 1 ]]; then
   )
 
   if [[ "$VERIFY_KIND" == "etherscan" ]]; then
-    VERIFY_CMD+=(--verifier etherscan --verifier-url "$VERIFY_URL")
+    VERIFY_CMD+=(--verifier etherscan)
+    if [[ -n "$VERIFY_URL" ]]; then
+      VERIFY_CMD+=(--verifier-url "$VERIFY_URL")
+    fi
     if [[ -n "$VERIFY_API_KEY" ]]; then
       VERIFY_CMD+=(--etherscan-api-key "$VERIFY_API_KEY")
     fi

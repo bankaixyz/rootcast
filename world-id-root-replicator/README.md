@@ -10,8 +10,8 @@ The repository contains:
 - `backend/` for runtime config, database startup, orchestration, and the
   read-only API
 - `program/` for the SP1 guest program
-- `contracts/` for the destination-chain root registry and verifier integration
-- `solana/` for the Solana Devnet root registry, tests, and deploy scripts
+- `contracts/` for the EVM, Starknet, and Solana destination contracts and
+  deploy helpers
 - `frontend/` for the read-only landing page and replication dashboard
 
 ## Provenance
@@ -51,10 +51,7 @@ Devnet, plus the Phase 5 deployment and productionization work.
 
 For contract deployment and verification, see
 [`contracts/README.md`](contracts/README.md) and the helper script
-`contracts/script/deploy_registry.sh`.
-
-For Solana Devnet setup, deploy, and initialization, see
-[`solana/README.md`](solana/README.md).
+`contracts/deploy.sh`.
 
 To manually submit a stored proof artifact to one configured destination chain,
 run:

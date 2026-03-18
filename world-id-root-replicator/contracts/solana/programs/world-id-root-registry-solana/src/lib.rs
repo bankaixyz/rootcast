@@ -4,7 +4,7 @@ pub mod state;
 
 use state::{RegistryState, RootRecord};
 
-declare_id!("CGPJkHwUYwubDNoaLwEMMNqHcHkKz3wB3SKb2ST4i2G1");
+declare_id!("2xuveg4Aeuhhhy67DMTRfJfQE5MK7iPF2F4gCAFGM7N7");
 
 const ROOT_SEED: &[u8] = b"root";
 const STATE_SEED: &[u8] = b"state";

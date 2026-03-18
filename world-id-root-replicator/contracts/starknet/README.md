@@ -12,7 +12,7 @@ replicator. It mirrors the Solidity registry's core behavior:
 
 - `src/lib.cairo`: Cairo contract
 - `tests/test_root_registry.cairo`: basic deployment and constant tests
-- `deploy.sh`: Starknet Sepolia declare and deploy helper
+- `deploy.sh`: Starknet Sepolia deploy helper
 
 ## Requirements
 
@@ -56,6 +56,12 @@ It also accepts the existing fallback names:
 scarb build
 ```
 
+The top-level deploy flow also rebuilds this package for you before deploy:
+
+```bash
+../deploy.sh --chain starknet-sepolia
+```
+
 ## Test
 
 ```bash
@@ -65,13 +71,18 @@ snforge test
 ## Deploy
 
 ```bash
-./deploy.sh
+../deploy.sh --chain starknet-sepolia
 ```
 
-Because the script reads the repo root `.env`, this command is enough if you
-already set `PROGRAM_VKEY`, `STARKNET_SEPOLIA_RPC_URL`,
+If you run the package-specific helper directly, build first and then run:
+
+```bash
+./deploy.sh --chain starknet-sepolia
+```
+
+The script reads the repo root `.env`, so this command is enough if you already
+set `PROGRAM_VKEY`, `STARKNET_SEPOLIA_RPC_URL`,
 `STARKNET_SEPOLIA_PRIVATE_KEY`, and `STARKNET_SEPOLIA_ACCOUNT_ADDRESS`.
 
-On the first run the script imports the OpenZeppelin account into `sncast`,
-declares `WorldIdRootRegistry`, deploys it, and prints the
+The script declares `WorldIdRootRegistry`, deploys it, and prints the
 `STARKNET_SEPOLIA_REGISTRY_ADDRESS=...` line to add to `.env`.

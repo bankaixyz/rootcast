@@ -21,8 +21,8 @@ pgo-data.profdata
 *.db-wal
 
 # Foundry
-contracts/cache
-contracts/out
+contracts/evm/cache
+contracts/evm/out
 
 # Frontend
 frontend/node_modules

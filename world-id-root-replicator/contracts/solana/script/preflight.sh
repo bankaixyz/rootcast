@@ -4,8 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SOLANA_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
-WORKSPACE_DIR=$(cd "$SOLANA_DIR/.." && pwd)
-ENV_FILE="$WORKSPACE_DIR/.env"
+REPO_ROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
   set -a
@@ -41,4 +41,4 @@ else
   echo "PROGRAM_VKEY is not set"
 fi
 
-echo "Run ./script/deploy_registry.sh next"
+echo "Run ./script/deploy.sh next"
