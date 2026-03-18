@@ -75,12 +75,10 @@ type ApiErrorResponse = {
 };
 
 const API_ORIGIN =
-  process.env.WORLD_ID_REPLICATOR_API_ORIGIN ?? "http://127.0.0.1:3001";
+  import.meta.env.VITE_API_ORIGIN ?? "";
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_ORIGIN}${path}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(`${API_ORIGIN}${path}`);
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;

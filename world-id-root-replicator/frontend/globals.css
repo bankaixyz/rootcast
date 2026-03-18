@@ -1,5 +1,7 @@
 :root {
   color-scheme: dark;
+  --font-sans: "Schibsted Grotesk", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
   --bg: #000000;
   --surface: rgba(7, 7, 7, 0.94);
   --surface-strong: rgba(12, 12, 12, 0.98);
