@@ -122,19 +122,46 @@ The script prints the deployed contract address and the exact
 
 ## Verification
 
-To deploy and verify in one step, pass `--verify` and ensure
-`ETHERSCAN_API_KEY` is set in your environment.
+The deploy helper now covers verification for every EVM chain in this
+repository. You can verify as part of a fresh deploy with `--verify`, or you
+can verify an existing deployment later with `--address`.
+
+Deploy and verify in one step:
 
 ```bash
 ./script/deploy_registry.sh --chain arb --verify
 ```
 
-The script submits verification to the correct explorer for the selected chain
-using the pinned compiler version, optimizer runs, and ABI-encoded constructor
-arguments. Etherscan-style verification is used on Base/OP/Arbitrum Sepolia,
-while Chiado uses Blockscout. Monad, HyperEVM, Tempo, MegaETH, and Plasma
-deploys are supported, but explorer verification is not wired into the helper
-yet and should be handled manually.
+Verify an existing deployment without redeploying:
+
+```bash
+./script/deploy_registry.sh \
+  --chain monad \
+  --address 0x3B40dd0cB126e8d521640407c6A3d663D3EAc7c5 \
+  --verify
+```
+
+The script submits verification with the pinned compiler version, optimizer
+runs, and ABI-encoded constructor arguments. It uses the correct backend for
+each chain:
+
+- Base Sepolia, OP Sepolia, Arbitrum Sepolia: Etherscan
+- Gnosis Chiado: Blockscout
+- Monad Testnet: Etherscan verifier against Monadscan's V1 API
+- HyperEVM Testnet: Sourcify via Purrsec
+- Tempo Testnet: Sourcify via Tempo's verifier
+- MegaETH Testnet: MegaETH Etherscan-compatible API
+- Plasma Testnet: Etherscan verifier against PlasmaScan's V1 API
+
+Set the explorer API keys that match the chains you want to verify:
+
+- `ETHERSCAN_API_KEY` for Base, OP, Arbitrum, and MegaETH
+- `MONADSCAN_API_KEY` for Monad, with `ETHERSCAN_API_KEY` accepted as a fallback
+- `PLASMA_TESTNET_API_KEY` for Plasma, with `ETHERSCAN_API_KEY` accepted as a fallback
+
+Chiado, HyperEVM, and Tempo do not need an API key in this helper. For Monad
+and Plasma, Foundry's `etherscan` verifier still requires an API key argument
+even when you point it at a custom V1 explorer URL.
 
 ## Starknet deployment
 

@@ -43,7 +43,8 @@ type TopologyTarget = {
   error_message: string | null;
 };
 
-const FLOW_HUB_OFFSET = 18;
+const FLOW_HUB_OFFSET = 6;
+const FLOW_SOURCE_CORNER = 14;
 
 export function ReplicationTopology({
   snapshot,
@@ -148,6 +149,16 @@ export function ReplicationTopology({
   const targetYs = targets.map(
     (_, i) => startOffset + i * stride + cardHeight / 2 - scrollOffset,
   );
+  const geometries = targets.map((_, i) =>
+    buildFlowGeometry(hubX, hubY, endX, targetYs[i]),
+  );
+  const topGeometries = geometries.filter((geometry) => geometry.direction === -1);
+  const bottomGeometries = geometries.filter((geometry) => geometry.direction === 1);
+  const topSharedGeometry = topGeometries.at(0) ?? null;
+  const bottomSharedGeometry = bottomGeometries.at(-1) ?? null;
+  const sharedSignalClass = active
+    ? "flow-branch__signal--confirmed"
+    : "flow-branch__signal--idle";
 
   return (
     <main className="topology-page">
@@ -271,11 +282,28 @@ export function ReplicationTopology({
               y1={hubY}
               y2={hubY}
             />
+            <path
+              className={`flow-branch__signal ${sharedSignalClass}`}
+              d={`M ${hubX - FLOW_HUB_OFFSET} ${hubY} L ${hubX} ${hubY}`}
+            />
             <circle className="flow-hub" cx={hubX} cy={hubY} r={3.5} />
 
-            {targets.map((target, i) => {
-              const y = targetYs[i];
-              const d = buildFlowPath(hubX, hubY, endX, y);
+            {topSharedGeometry ? (
+              <path
+                className={`flow-branch__signal ${sharedSignalClass}`}
+                d={buildSharedSignalPath(topSharedGeometry)}
+              />
+            ) : null}
+
+            {bottomSharedGeometry ? (
+              <path
+                className={`flow-branch__signal ${sharedSignalClass}`}
+                d={buildSharedSignalPath(bottomSharedGeometry)}
+              />
+            ) : null}
+
+            {geometries.map((geometry, i) => {
+              const target = targets[i];
               const signalClass = flowSignalClass(target.display_state, active);
 
               return (
@@ -286,10 +314,13 @@ export function ReplicationTopology({
                 >
                   <path
                     className="flow-branch__base"
-                    d={d}
+                    d={geometry.basePath}
                   />
-                  <path className={`flow-branch__signal ${signalClass}`} d={d} />
-                  <circle className="flow-branch__node" cx={endX} cy={y} r={3.5} />
+                  <path
+                    className={`flow-branch__signal ${signalClass}`}
+                    d={geometry.signalPath}
+                  />
+                  <circle className="flow-branch__node" cx={endX} cy={geometry.targetY} r={3.5} />
                 </g>
               );
             })}
@@ -547,34 +578,96 @@ function flowSignalClass(
   return "flow-branch__signal--confirmed";
 }
 
-function buildFlowPath(hubX: number, hubY: number, endX: number, targetY: number) {
+type FlowGeometry = {
+  basePath: string;
+  direction: -1 | 0 | 1;
+  divergenceY: number;
+  endX: number;
+  firstHorizontalX: number;
+  firstVerticalY: number;
+  hubX: number;
+  hubY: number;
+  signalPath: string;
+  spineX: number;
+  targetY: number;
+};
+
+function buildFlowGeometry(
+  hubX: number,
+  hubY: number,
+  endX: number,
+  targetY: number,
+): FlowGeometry {
   const deltaY = targetY - hubY;
 
   if (Math.abs(deltaY) < 1) {
-    return `M ${hubX} ${hubY} L ${endX} ${targetY}`;
+    return {
+      basePath: `M ${hubX} ${hubY} L ${endX} ${targetY}`,
+      direction: 0,
+      divergenceY: targetY,
+      endX,
+      firstHorizontalX: hubX,
+      firstVerticalY: hubY,
+      hubX,
+      hubY,
+      signalPath: `M ${hubX} ${hubY} L ${endX} ${targetY}`,
+      spineX: hubX,
+      targetY,
+    };
   }
 
   const direction = deltaY > 0 ? 1 : -1;
   const spanX = Math.max(1, endX - hubX);
   const lead = Math.min(56, Math.max(34, spanX * 0.14));
   const spineX = hubX + lead;
-  const corner = Math.max(
+  const targetCorner = Math.max(
     4,
     Math.min(18, Math.abs(deltaY) / 2, (endX - spineX) * 0.14),
   );
   const kappa = 0.5522847498;
-  const firstHorizontalX = spineX - corner;
-  const secondHorizontalX = spineX + corner;
-  const firstVerticalY = hubY + direction * corner;
-  const secondVerticalY = targetY - direction * corner;
+  const firstHorizontalX = spineX - FLOW_SOURCE_CORNER;
+  const secondHorizontalX = spineX + targetCorner;
+  const firstVerticalY = hubY + direction * FLOW_SOURCE_CORNER;
+  const divergenceY = targetY - direction * targetCorner;
+
+  return {
+    basePath: [
+      `M ${hubX} ${hubY}`,
+      `L ${firstHorizontalX} ${hubY}`,
+      `C ${firstHorizontalX + FLOW_SOURCE_CORNER * kappa} ${hubY}, ${spineX} ${hubY + direction * FLOW_SOURCE_CORNER * (1 - kappa)}, ${spineX} ${firstVerticalY}`,
+      `L ${spineX} ${divergenceY}`,
+      `C ${spineX} ${targetY - direction * targetCorner * (1 - kappa)}, ${secondHorizontalX - targetCorner * kappa} ${targetY}, ${secondHorizontalX} ${targetY}`,
+      `L ${endX} ${targetY}`,
+    ].join(" "),
+    direction,
+    divergenceY,
+    endX,
+    firstHorizontalX,
+    firstVerticalY,
+    hubX,
+    hubY,
+    signalPath: [
+      `M ${spineX} ${divergenceY}`,
+      `C ${spineX} ${targetY - direction * targetCorner * (1 - kappa)}, ${secondHorizontalX - targetCorner * kappa} ${targetY}, ${secondHorizontalX} ${targetY}`,
+      `L ${endX} ${targetY}`,
+    ].join(" "),
+    spineX,
+    targetY,
+  };
+}
+
+function buildSharedSignalPath(geometry: FlowGeometry) {
+  if (geometry.direction === 0) {
+    return `M ${geometry.hubX} ${geometry.hubY} L ${geometry.endX} ${geometry.targetY}`;
+  }
+
+  const kappa = 0.5522847498;
 
   return [
-    `M ${hubX} ${hubY}`,
-    `L ${firstHorizontalX} ${hubY}`,
-    `C ${firstHorizontalX + corner * kappa} ${hubY}, ${spineX} ${hubY + direction * corner * (1 - kappa)}, ${spineX} ${firstVerticalY}`,
-    `L ${spineX} ${secondVerticalY}`,
-    `C ${spineX} ${targetY - direction * corner * (1 - kappa)}, ${secondHorizontalX - corner * kappa} ${targetY}, ${secondHorizontalX} ${targetY}`,
-    `L ${endX} ${targetY}`,
+    `M ${geometry.hubX} ${geometry.hubY}`,
+    `L ${geometry.firstHorizontalX} ${geometry.hubY}`,
+    `C ${geometry.firstHorizontalX + FLOW_SOURCE_CORNER * kappa} ${geometry.hubY}, ${geometry.spineX} ${geometry.hubY + geometry.direction * FLOW_SOURCE_CORNER * (1 - kappa)}, ${geometry.spineX} ${geometry.firstVerticalY}`,
+    `L ${geometry.spineX} ${geometry.divergenceY}`,
   ].join(" ");
 }
 
