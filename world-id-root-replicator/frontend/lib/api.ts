@@ -28,6 +28,7 @@ export type RootSnapshot = {
   source_block_number: number;
   source_tx_hash: string;
   observed_at: string;
+  updated_at: string;
   bankai_finalized_at: string | null;
   bankai_finalized_block_number?: number | null;
   observed_root_status: string;
@@ -77,6 +78,18 @@ type ApiErrorResponse = {
 const API_ORIGIN =
   import.meta.env.VITE_API_ORIGIN ?? "";
 
+export function isSettledReplication(snapshot: RootSnapshot) {
+  return (
+    snapshot.targets.length > 0 &&
+    snapshot.confirmed_target_count + snapshot.failed_target_count ===
+      snapshot.targets.length
+  );
+}
+
+export function getLatestSettledReplication(roots: RootSnapshot[]) {
+  return roots.find(isSettledReplication) ?? null;
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_ORIGIN}${path}`);
 
@@ -109,6 +122,7 @@ export async function getLandingData() {
     status,
     snapshot: latest.snapshot,
     roots: rootsRes.roots,
+    latestSettledSnapshot: getLatestSettledReplication(rootsRes.roots),
   };
 }
 

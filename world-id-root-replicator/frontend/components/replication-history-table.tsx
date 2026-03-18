@@ -9,12 +9,15 @@ import { formatBlock, formatTimestamp, shortHash } from "@/lib/format";
 
 type Props = {
   roots: RootSnapshot[];
+  maxItems?: number;
 };
 
-export function ReplicationHistoryTable({ roots }: Props) {
+export function ReplicationHistoryTable({ roots, maxItems }: Props) {
   const completedRoots = roots.filter((root) =>
     root.targets.some((t) => t.tx_hash),
   );
+  const visibleRoots =
+    maxItems == null ? completedRoots : completedRoots.slice(0, maxItems);
 
   return (
     <section className="history">
@@ -23,14 +26,14 @@ export function ReplicationHistoryTable({ roots }: Props) {
         <h2 className="history__title">Past replications</h2>
       </div>
 
-      {completedRoots.length === 0 ? (
+      {visibleRoots.length === 0 ? (
         <p className="history__empty">
           No completed replications yet. Rows will appear here once the first
           root has been relayed to at least one destination chain.
         </p>
       ) : (
         <div className="history__list">
-          {completedRoots.map((root) => (
+          {visibleRoots.map((root) => (
             <ReplicationCard key={root.job_id} root={root} />
           ))}
         </div>
@@ -70,7 +73,7 @@ export function ReplicationCard({ root }: { root: RootSnapshot }) {
           </span>
           <span className="history-card__sep">·</span>
           <span className="history-card__time">
-            {formatTimestamp(root.observed_at)}
+            {formatTimestamp(root.updated_at)}
           </span>
         </div>
         <span className="history-card__summary">

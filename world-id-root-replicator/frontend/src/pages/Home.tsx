@@ -4,5 +4,5 @@ import { usePolling } from "@/lib/use-polling";
 
 export function Home() {
   const { data } = usePolling(getLandingData, 30_000);
-  return <LandingPage snapshot={data?.snapshot ?? null} />;
+  return <LandingPage snapshot={data?.latestSettledSnapshot ?? null} />;
 }

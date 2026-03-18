@@ -8,6 +8,8 @@ export function ReplicationTargetCard({
 }: {
   target: ReplicationTarget;
 }) {
+  const failed = target.display_state === "failed";
+
   return (
     <article className="target-card">
       <div className="target-card__header">
@@ -39,7 +41,7 @@ export function ReplicationTargetCard({
         </span>
         {target.tx_hash ? (
           <a
-            className="inline-link"
+            className={`inline-link ${failed ? "inline-link--failed" : ""}`}
             href={chainTxUrl(target.chain_name, target.tx_hash)}
             rel="noreferrer"
             target="_blank"

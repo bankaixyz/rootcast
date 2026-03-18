@@ -2,6 +2,8 @@ import type { RootSnapshot, ChainStatus } from "@/lib/api";
 import { PipelineIndicator } from "@/components/pipeline-indicator";
 import { ReplicationTopology } from "@/components/replication-topology";
 import { ReplicationHistoryTable } from "@/components/replication-history-table";
+import { Navbar } from "@/components/navbar";
+import { SiteFooter } from "@/components/site-footer";
 
 type DashboardPageProps = {
   snapshot: RootSnapshot | null;
@@ -18,14 +20,7 @@ export function DashboardPage({
 }: DashboardPageProps) {
   return (
     <div className="dashboard">
-      <nav className="dash-nav">
-        <span className="dash-nav__brand">World ID Root Replicator</span>
-        <div className="dash-nav__links">
-          <a href="/" className="dash-nav__link">
-            Home
-          </a>
-        </div>
-      </nav>
+      <Navbar currentPage="dashboard" />
 
       {errorMessage && (
         <div className="dash-error">
@@ -55,8 +50,10 @@ export function DashboardPage({
       </div>
 
       <div className="dash-history-container">
-        <ReplicationHistoryTable roots={roots} />
+        <ReplicationHistoryTable roots={roots} maxItems={10} />
       </div>
+
+      <SiteFooter />
     </div>
   );
 }

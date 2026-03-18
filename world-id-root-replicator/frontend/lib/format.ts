@@ -15,12 +15,12 @@ export function formatTimestamp(value: string | null | undefined) {
     return "Pending";
   }
 
-  const date = new Date(value);
+  const date = parseTimestamp(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
@@ -42,4 +42,25 @@ export function formatAgeSeconds(value: number | null) {
 
   const hours = Math.floor(minutes / 60);
   return `${hours}h ago`;
+}
+
+function parseTimestamp(value: string) {
+  const utcTimestamp = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (utcTimestamp) {
+    const [, year, month, day, hour, minute, second = "00"] = utcTimestamp;
+    return new Date(
+      Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+      ),
+    );
+  }
+
+  return new Date(value);
 }
