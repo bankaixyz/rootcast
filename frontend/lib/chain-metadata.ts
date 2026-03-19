@@ -58,11 +58,11 @@ const TARGET_CHAIN_METADATA: Record<
     txUrl: (hash) => `https://testnet.plasmascan.to/tx/${hash}`,
   },
   "hyperevm-testnet": {
-    addressUrl: (address) => `https://testnet.purrsec.com/address/${address}`,
+    addressUrl: (address) => `https://hyperevm-explorer.vercel.app/address/${address}`,
     label: "HyperEVM",
     order: 7,
     targetLabel: "Registry",
-    txUrl: (hash) => `https://testnet.purrsec.com/tx/${hash}`,
+    txUrl: (hash) => `https://hyperevm-explorer.vercel.app/tx/{hash}`,
   },
   "op-sepolia": {
     addressUrl: (address) => `https://sepolia-optimism.etherscan.io/address/${address}`,
