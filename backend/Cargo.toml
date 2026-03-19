@@ -38,8 +38,5 @@ ethereum_hashing = { git = "https://github.com/bankaixyz/ethereum_hashing", rev 
 starknet = { workspace = true }
 garaga_rs = { workspace = true }
 
-[build-dependencies]
-sp1-build = { workspace = true }
-
 [dev-dependencies]
 tower = { version = "0.5.2", features = ["util"] }

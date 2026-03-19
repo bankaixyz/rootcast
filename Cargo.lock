@@ -14310,7 +14310,6 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-sdk",
- "sp1-build",
  "sp1-sdk",
  "sqlx",
  "starknet 0.17.0",

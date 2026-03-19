@@ -8,6 +8,8 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY backend ./backend
 COPY program ./program
 
+RUN test -f /app/program/elf/world-id-root-replicator-program
+
 RUN cargo build --release -p world-id-root-replicator-backend
 
 FROM --platform=linux/amd64 ubuntu:24.04 AS runtime
