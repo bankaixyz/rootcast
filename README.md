@@ -126,7 +126,7 @@ production use.
 | Tempo | Testnet | `0x3B40dd0cB126e8d521640407c6A3d663D3EAc7c5` | `0x9e630e6A6BFbcF1b1c213552Aaea5469ff5C9664` |
 | MegaETH | Testnet | `0x3B40dd0cB126e8d521640407c6A3d663D3EAc7c5` | `0x9e630e6A6BFbcF1b1c213552Aaea5469ff5C9664` |
 | Plasma | Testnet | `0x3B40dd0cB126e8d521640407c6A3d663D3EAc7c5` | `0x9e630e6A6BFbcF1b1c213552Aaea5469ff5C9664` |
-| Starknet | Sepolia | `0x0522...0ad7` | Garaga class `0x79b7...b611` |
+| Starknet | Sepolia | `0x0522fb6a00ec72af9f950d6040d7bc31b86b5d4ebd372060fd02d1cebfa70ad7` | `0x79b72f62c1c6aad55c0ee0ecc68132a32db268306a19c451c35191080b7b611` |
 | Solana | Devnet | `CGPJkHwUYwubDNoaLwEMMNqHcHkKz3wB3SKb2ST4i2G1` | -- |
 
 EVM chains use the [SP1 Groth16 verifier](https://docs.succinct.xyz).
