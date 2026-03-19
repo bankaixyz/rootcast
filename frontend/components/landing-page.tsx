@@ -22,7 +22,7 @@ const STEPS = [
       "Generate a zero-knowledge storage proof using Bankai\u2019s stateless light client.",
   },
   {
-    title: "Replicate",
+    title: "Broadcast",
     description:
       "Submit the proven root to identity registries on every destination chain.",
   },
@@ -48,20 +48,20 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
-    question: "Why do identity roots need to be replicated across chains?",
+    question: "Why do identity roots need to be broadcast across chains?",
     answer: (
       <p>
         Under the hood, proof of personhood is represented as a Merkle tree,
         and users prove membership against its current root. If that root only
         lives on Ethereum, every application has to anchor back to Ethereum to
-        trust it. Replicating the root across chains gives each supported chain
+        trust it. Broadcasting the root across chains gives each supported chain
         the same canonical human set locally, so applications can verify the
         same World ID state wherever they run.
       </p>
     ),
   },
   {
-    question: "How does the replication process work end-to-end?",
+    question: "How does Rootcast work end-to-end?",
     answer: (
       <p>
         When World ID publishes a new root on Ethereum, we record the exact
@@ -74,7 +74,7 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
-    question: "What is Bankai and how does it enable trustless replication?",
+    question: "What is Bankai and how does it enable trustless root broadcasting?",
     answer: (
       <p>
         Bankai is built on an idea called{" "}
@@ -92,13 +92,13 @@ const FAQ_ITEMS: FaqItem[] = [
     ),
   },
   {
-    question: "How quickly are roots replicated after an L1 update?",
+    question: "How quickly are roots broadcast after an L1 update?",
     answer: (
       <p>
-        We do not replicate the moment a new root appears, because the source
+        We do not broadcast the moment a new root appears, because the source
         Ethereum block has to finalize first. After that, proving and fan-out
-        take about 90 seconds end to end. World ID root updates happen roughly
-        once per hour, so the system is designed around correctness first and
+        take about 90 seconds end to end. The system proves a new root every
+        two hours, so it is designed around correctness first and
         fast cross-chain availability second.
       </p>
     ),
@@ -108,7 +108,7 @@ const FAQ_ITEMS: FaqItem[] = [
     answer: (
       <p>
         Usually, yes. Any destination that can verify the proof and store the
-        resulting World ID root can join the replication set. On EVM chains,
+        resulting World ID root can join the rootcast network. On EVM chains,
         that often means reusing the same basic pattern: a Groth16 verifier
         plus a registry contract for verified roots, so new integrations can be
         very fast. On non-EVM chains, it depends on the available verifier
@@ -163,7 +163,7 @@ export function LandingPage({ snapshot }: LandingPageProps) {
             on every chain
           </h1>
           <p className="landing-hero__sub">
-            Trustlessly replicate World ID identity roots from Ethereum across
+            Trustlessly broadcast World ID identity roots from Ethereum across
             10+ blockchains using zero-knowledge proofs and stateless light
             client technology.
           </p>
@@ -171,7 +171,7 @@ export function LandingPage({ snapshot }: LandingPageProps) {
             <a href="/dashboard" className="landing-btn landing-btn--primary">
               View Live Dashboard
             </a>
-            <a href="https://github.com/bankaixyz/world-id-replicator" className="landing-btn landing-btn--ghost" target="_blank" rel="noreferrer">
+            <a href="https://github.com/bankaixyz/rootcast" className="landing-btn landing-btn--ghost" target="_blank" rel="noreferrer">
               View Source
             </a>
           </div>
@@ -210,13 +210,13 @@ export function LandingPage({ snapshot }: LandingPageProps) {
       <section className="landing-section">
         <span className="landing-section__eyebrow">Live status</span>
         <h2 className="landing-section__title">
-          Replicated across the ecosystem
+          Broadcast across the ecosystem
         </h2>
         {snapshot ? (
           <ReplicationCard root={snapshot} />
         ) : (
           <p className="landing-section__empty">
-            No completed replications yet. The latest replication will appear
+            No completed broadcasts yet. The latest broadcast will appear
             here once roots have been relayed to destination chains.
           </p>
         )}
@@ -245,10 +245,10 @@ export function LandingPage({ snapshot }: LandingPageProps) {
           Bring proof of personhood to your chain
         </h2>
         <p className="landing-cta__sub">
-          Deploy an identity root registry on any chain and join the replication
+          Deploy an identity root registry on any chain and join the broadcast
           network.
         </p>
-        <a href="https://github.com/bankaixyz/world-id-replicator" className="landing-btn landing-btn--primary" target="_blank" rel="noreferrer">
+        <a href="https://github.com/bankaixyz/rootcast" className="landing-btn landing-btn--primary" target="_blank" rel="noreferrer">
           Get Started on GitHub
         </a>
       </section>

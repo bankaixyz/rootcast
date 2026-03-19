@@ -1,5 +1,5 @@
 {
-  "name": "world-id-root-replicator-frontend",
+  "name": "world-id-rootcast-frontend",
   "private": true,
   "version": "0.1.0",
   "type": "module",

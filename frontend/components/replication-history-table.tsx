@@ -22,8 +22,8 @@ export function ReplicationHistoryTable({ roots, maxItems }: Props) {
   return (
     <section className="history">
       <div className="history__header">
-        <span className="history__eyebrow">Replication log</span>
-        <h2 className="history__title">Past replications</h2>
+        <span className="history__eyebrow">Broadcast log</span>
+        <h2 className="history__title">Past broadcasts</h2>
       </div>
 
       {visibleRoots.length === 0 ? (

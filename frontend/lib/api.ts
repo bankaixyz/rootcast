@@ -76,7 +76,7 @@ type ApiErrorResponse = {
 };
 
 const API_ORIGIN =
-  import.meta.env.VITE_API_ORIGIN ?? "";
+  import.meta.env.VITE_API_ORIGIN ?? "https://api.replicator.bankai.xyz";
 
 export function isSettledReplication(snapshot: RootSnapshot) {
   return (

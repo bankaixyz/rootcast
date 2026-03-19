@@ -38,7 +38,7 @@ export function DashboardPage({
             <div className="topology-card__header">
               <div className="topology-card__title-block">
                 <span className="topology-card__eyebrow">Live status</span>
-                <h2 className="topology-card__title">Current Replication</h2>
+                <h2 className="topology-card__title">Current Broadcast</h2>
               </div>
               <PipelineIndicator
                 snapshot={snapshot}

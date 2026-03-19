@@ -1,19 +1,19 @@
-# World ID Root Replicator
+# World ID Rootcast
 
 World ID should be on every chain. This project makes that practical by
-replicating the canonical World ID Merkle root from Ethereum L1 to
+broadcasting the canonical World ID Merkle root from Ethereum L1 to
 destination chains across the ecosystem -- so applications can verify
 proof of personhood locally, wherever they run, against the same
 canonical human set.
 
-The replication is powered by [Bankai](https://docs.bankai.xyz), a
+Broadcasting is powered by [Bankai](https://docs.bankai.xyz), a
 stateless light client that proves Ethereum state with zero-knowledge
 proofs. Instead of bridging messages or running a light-client contract
 on every destination, the system proves the exact L1 storage value and
 submits the verified root to each chain's identity registry. One proof
 pipeline, many destinations, no per-chain infrastructure to maintain.
 
-## Why replicate the root?
+## Why broadcast the root?
 
 Under the hood, World ID proof of personhood is a Merkle tree. Users
 prove membership against its current root, and applications check that
@@ -26,7 +26,7 @@ relay the value, or asking users to verify against a remote chain -- both
 of which add trust assumptions, latency, or integration friction that
 shouldn't be necessary.
 
-Replicating the root removes that bottleneck. Each destination chain
+Broadcasting the root removes that bottleneck. Each destination chain
 holds the same canonical value locally, so verification stays fast,
 cheap, and self-contained.
 
@@ -56,7 +56,7 @@ For this project, the key properties are:
 - **Portable verification.** The same proof works on any chain with a
   Groth16 verifier -- EVM, non-EVM, or inside another ZK program.
 - **Source-chain finality.** Bankai follows Ethereum's native finality
-  model exactly. Roots are replicated from finalized L1 state, not from
+  model exactly. Roots are broadcast from finalized L1 state, not from
   optimistic or unconfirmed updates.
 
 ### What Bankai does not remove
@@ -74,7 +74,7 @@ recursive proofs.
 
 This system could be built on a traditional messaging bridge or a
 stateful on-chain light client. Both work, but they come with costs that
-make universal replication harder.
+make universal broadcasting harder.
 
 | | Bridge | Stateful light client | This approach (Bankai) |
 |---|---|---|---|
@@ -93,23 +93,23 @@ verified roots.
 
 ## How it works
 
-The replication pipeline has four stages:
+The broadcast pipeline has four stages:
 
 1. **Observe** -- monitor the World ID identity manager contract on
    Ethereum for new Merkle root updates.
 2. **Finalize** -- wait for the source block to reach consensus finality
-   on Ethereum L1. Roots are never replicated from unfinalized state.
+   on Ethereum L1. Roots are never broadcast from unfinalized state.
 3. **Prove** -- generate a zero-knowledge storage proof using Bankai's
    stateless light client. The proof attests to the exact storage value at
    a finalized L1 block, verified inside SP1.
-4. **Replicate** -- submit the proven root to identity registry contracts
+4. **Broadcast** -- submit the proven root to identity registry contracts
    on every destination chain. Each registry stores the verified value
    locally, making it available for on-chain proof-of-personhood checks.
 
 ## Current status
 
 This is a proof-of-concept running on testnets. The system demonstrates
-end-to-end replication from Ethereum Sepolia to multiple destination
+end-to-end broadcasting from Ethereum Sepolia to multiple destination
 chains, but it is not yet deployed against mainnet or hardened for
 production use.
 
@@ -141,7 +141,7 @@ configured but not yet deployed.
 - SP1 proof generation with public values and artifact handling
 - Contract-side SP1 verifier and program-vkey binding
 - Relay paths for EVM, Starknet Sepolia, and Solana Devnet
-- Read-only API and a frontend dashboard for replication state
+- Read-only API and a frontend dashboard for broadcast state
 
 **What remains:**
 
@@ -155,7 +155,7 @@ configured but not yet deployed.
 backend/     Runtime config, database, orchestration, and the read-only API
 program/     SP1 guest program
 contracts/   EVM, Starknet, and Solana destination contracts and deploy helpers
-frontend/    Landing page and replication dashboard
+frontend/    Landing page and broadcast dashboard
 ```
 
 For contract deployment, verification, and supported chain names, see
@@ -196,7 +196,7 @@ cargo run -p world-id-root-replicator-backend --bin print_program_vkey
 
 ## Docker deployment
 
-The repository now includes a Docker Compose setup that runs the Rust
+The repository includes a Docker Compose setup that runs the Rust
 backend and the static frontend together. The backend keeps its SQLite
 database in a named Docker volume, and the frontend is served by Nginx
 with `/api` proxied to the backend container.
@@ -240,24 +240,9 @@ To stop it and remove the persisted volumes as well:
 docker compose down -v
 ```
 
-### Existing reverse proxy
-
-If you already run a separate Nginx reverse proxy on the host, this
-compose file is set up for a backend-only deployment. The backend is not
-published on a host port; instead, it joins an external Docker network
-and is reachable there as `world-id-replicator-backend:3001`.
-
-This repository is pinned to the staging Bankai network
-`bankai-backend_default`, so it can be reached directly from the Nginx
-container in the `bankai-backend` stack without any extra environment
-variables.
-
-An example Nginx vhost for the backend lives at
-`deploy/nginx/replicator.conf.example`.
-
 ## Links
 
-- [Live dashboard](https://world-id-replicator.vercel.app/dashboard)
+- [Live dashboard](https://rootcast.bankai.xyz/dashboard)
 - [Bankai documentation](https://docs.bankai.xyz)
 - [Bankai stateless light clients](https://docs.bankai.xyz/docs/concepts/stateless-light-clients)
 - [Contracts documentation](contracts/README.md)

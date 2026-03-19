@@ -1,7 +1,6 @@
 # Frontend
 
-This directory contains the read-only frontend for the World ID root
-replicator.
+This directory contains the read-only frontend for World ID Rootcast.
 
 The frontend currently includes:
 
