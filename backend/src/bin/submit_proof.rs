@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| destination.contract_address.clone());
 
-    let proof_service = Sp1ProofService::new(PathBuf::from("artifacts/proofs"));
+    let proof_service = Sp1ProofService::new(PathBuf::from("artifacts/proofs"), true);
     let artifact = proof_service
         .load(&args.artifact_path)
         .await

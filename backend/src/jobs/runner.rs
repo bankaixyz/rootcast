@@ -47,7 +47,10 @@ impl Runner {
             config.bankai_network,
             config.execution_rpc.clone(),
         ));
-        let proof_service = Arc::new(Sp1ProofService::new(PathBuf::from("artifacts/proofs")));
+        let proof_service = Arc::new(Sp1ProofService::new(
+            PathBuf::from("artifacts/proofs"),
+            config.sp1_verify_proof,
+        ));
         let destinations = config.destination_chains;
         let program_vkey = current_program_vkey();
         let submission_clients = destinations

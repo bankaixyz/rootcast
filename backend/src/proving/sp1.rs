@@ -48,12 +48,14 @@ pub trait ProofService: Send + Sync {
 
 pub struct Sp1ProofService {
     artifact_dir: PathBuf,
+    verify_proof: bool,
 }
 
 impl Sp1ProofService {
-    pub fn new(artifact_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(artifact_dir: impl Into<PathBuf>, verify_proof: bool) -> Self {
         Self {
             artifact_dir: artifact_dir.into(),
+            verify_proof,
         }
     }
 
@@ -91,9 +93,11 @@ impl ProofService for Sp1ProofService {
             .run()
             .context("generate SP1 Groth16 proof")?;
 
-        client
-            .verify(&proof, &vk)
-            .context("verify generated SP1 proof")?;
+        if self.verify_proof {
+            client
+                .verify(&proof, &vk)
+                .context("verify generated SP1 proof")?;
+        }
 
         let public_values = proof.public_values.to_vec();
         let decoded_public_values = decode_public_values(&public_values)?;

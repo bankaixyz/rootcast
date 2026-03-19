@@ -10,22 +10,14 @@ services:
     environment:
       DATABASE_URL: sqlite:///data/world-id-root-replicator.db
       LISTEN_ADDR: 0.0.0.0:3001
+      SP1_VERIFY_PROOF: "false"
     restart: unless-stopped
     expose:
       - "3001"
     volumes:
       - backend_db:/data
       - backend_artifacts:/app/artifacts/proofs
-    networks:
-      reverse-proxy:
-        aliases:
-          - world-id-replicator-backend
 
 volumes:
   backend_db:
   backend_artifacts:
-
-networks:
-  reverse-proxy:
-    external: true
-    name: bankai-backend_default

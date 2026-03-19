@@ -12,6 +12,7 @@ pub struct Config {
     pub bankai_network: BankaiNetwork,
     pub enforce_min_proof_request_gap: bool,
     pub sp1_prover: String,
+    pub sp1_verify_proof: bool,
     pub execution_rpc: String,
     pub destination_chains: Vec<DestinationChainConfig>,
 }
@@ -65,6 +66,7 @@ impl Config {
             enforce_min_proof_request_gap: optional_bool("ENFORCE_MIN_PROOF_REQUEST_GAP")?
                 .unwrap_or(false),
             sp1_prover: required("SP1_PROVER")?,
+            sp1_verify_proof: optional_bool("SP1_VERIFY_PROOF")?.unwrap_or(true),
             execution_rpc: required("EXECUTION_RPC")?,
             destination_chains: enabled_destination_chains()?
                 .into_iter()
