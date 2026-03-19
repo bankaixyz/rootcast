@@ -859,7 +859,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recording_a_new_root_keeps_an_older_pending_root_after_50_minutes() {
+    async fn recording_a_new_root_keeps_an_older_pending_root_after_2_hours() {
         let pool = test_pool().await;
         let destinations = all_destinations();
 
@@ -867,7 +867,7 @@ mod tests {
         sqlx::query(
             r#"
             UPDATE observed_roots
-            SET observed_at = datetime('now', '-51 minutes')
+            SET observed_at = datetime('now', '-121 minutes')
             "#,
         )
         .execute(&pool)
@@ -1801,7 +1801,7 @@ mod tests {
             UPDATE replication_jobs
             SET
                 state = ?,
-                proof_requested_at = datetime('now', '-51 minutes')
+                proof_requested_at = datetime('now', '-121 minutes')
             "#,
         )
         .bind(ReplicationJobState::Completed.as_db_str())
@@ -1853,7 +1853,7 @@ mod tests {
             UPDATE replication_jobs
             SET
                 state = ?,
-                proof_requested_at = datetime('now', '-49 minutes')
+                proof_requested_at = datetime('now', '-119 minutes')
             "#,
         )
         .bind(ReplicationJobState::Completed.as_db_str())

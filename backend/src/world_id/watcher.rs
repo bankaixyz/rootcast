@@ -108,14 +108,14 @@ impl RootWatcher for WorldIdWatcher {
                         root = %observed_root.root_hex,
                         source_block_number = observed_root.source_block_number,
                         source_tx_hash = %observed_root.source_tx_hash,
-                        "skipped World ID root because an older pending root has been waiting longer than 50 minutes"
+                        "skipped World ID root because an older pending root has been waiting longer than 2 hours"
                     );
                 } else if record.created && record.skipped {
                     info!(
                         root = %observed_root.root_hex,
                         source_block_number = observed_root.source_block_number,
                         source_tx_hash = %observed_root.source_tx_hash,
-                        "skipped World ID root because the previous proof is newer than 50 minutes"
+                        "skipped World ID root because the previous proof is newer than 2 hours"
                     );
                 } else if record.created {
                     info!(

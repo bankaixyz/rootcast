@@ -5,8 +5,8 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{FromRow, SqlitePool};
 use std::str::FromStr;
 
-const MIN_PROOF_REQUEST_AGE_SECS: i64 = 50 * 60;
-const PENDING_ROOT_REPLACEMENT_LOCK_AGE_SECS: i64 = 50 * 60;
+const MIN_PROOF_REQUEST_AGE_SECS: i64 = 2 * 60 * 60;
+const PENDING_ROOT_REPLACEMENT_LOCK_AGE_SECS: i64 = 2 * 60 * 60;
 
 pub async fn connect(database_url: &str) -> Result<SqlitePool> {
     let options = SqliteConnectOptions::from_str(database_url)?
