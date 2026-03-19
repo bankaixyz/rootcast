@@ -194,6 +194,67 @@ Print the current SP1 program vkey:
 cargo run -p world-id-root-replicator-backend --bin print_program_vkey
 ```
 
+## Docker deployment
+
+The repository now includes a Docker Compose setup that runs the Rust
+backend and the static frontend together. The backend keeps its SQLite
+database in a named Docker volume, and the frontend is served by Nginx
+with `/api` proxied to the backend container.
+
+The backend image is pinned to `linux/amd64` because the current SP1
+builder image publishes that platform. On Apple Silicon, Docker Desktop
+will run it through emulation automatically.
+
+Start the full stack with:
+
+```bash
+docker compose up --build -d
+```
+
+The services are exposed at:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:3001`
+
+Compose reads the normal project `.env` file for runtime secrets and
+chain configuration. It overrides only the backend bind address and
+database path so the container uses:
+
+- `LISTEN_ADDR=0.0.0.0:3001`
+- `DATABASE_URL=sqlite:///data/world-id-root-replicator.db`
+
+The named volumes are:
+
+- `backend_db` for the SQLite database
+- `backend_artifacts` for generated proof artifacts
+
+To stop the stack:
+
+```bash
+docker compose down
+```
+
+To stop it and remove the persisted volumes as well:
+
+```bash
+docker compose down -v
+```
+
+### Existing reverse proxy
+
+If you already run a separate Nginx reverse proxy on the host, this
+compose file is set up for a backend-only deployment. The backend is not
+published on a host port; instead, it joins an external Docker network
+and is reachable there as `world-id-replicator-backend:3001`.
+
+This repository is pinned to the staging Bankai network
+`bankai-backend_default`, so it can be reached directly from the Nginx
+container in the `bankai-backend` stack without any extra environment
+variables.
+
+An example Nginx vhost for the backend lives at
+`deploy/nginx/replicator.conf.example`.
+
 ## Links
 
 - [Live dashboard](https://world-id-replicator.vercel.app/dashboard)

@@ -1,0 +1,8 @@
+.env
+.git
+.tools
+artifacts
+contracts
+frontend
+target
+world-id-root-replicator.db

@@ -1,0 +1,31 @@
+services:
+  backend:
+    platform: linux/amd64
+    container_name: world-id-replicator-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:///data/world-id-root-replicator.db
+      LISTEN_ADDR: 0.0.0.0:3001
+    restart: unless-stopped
+    expose:
+      - "3001"
+    volumes:
+      - backend_db:/data
+      - backend_artifacts:/app/artifacts/proofs
+    networks:
+      reverse-proxy:
+        aliases:
+          - world-id-replicator-backend
+
+volumes:
+  backend_db:
+  backend_artifacts:
+
+networks:
+  reverse-proxy:
+    external: true
+    name: bankai-backend_default
