@@ -6,7 +6,7 @@ destination chains across the ecosystem -- so applications can verify
 proof of personhood locally, wherever they run, against the same
 canonical human set.
 
-Broadcasting is powered by [Bankai](https://docs.bankai.xyz), a
+Rootcast is powered by [Bankai](https://docs.bankai.xyz), a
 stateless light client that proves Ethereum state with zero-knowledge
 proofs. Instead of bridging messages or running a light-client contract
 on every destination, the system proves the exact L1 storage value and
