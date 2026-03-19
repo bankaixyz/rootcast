@@ -4,7 +4,7 @@ const STEPS = [
   { key: "observe", label: "Observe" },
   { key: "finalize", label: "Finalize" },
   { key: "prove", label: "Prove" },
-  { key: "replicate", label: "Replicate" },
+  { key: "replicate", label: "Broadcast" },
 ] as const;
 
 type StepKey = (typeof STEPS)[number]["key"];

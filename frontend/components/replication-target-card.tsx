@@ -14,7 +14,7 @@ export function ReplicationTargetCard({
     <article className="target-card">
       <div className="target-card__header">
         <div>
-          <div className="label">Replication target</div>
+          <div className="label">Broadcast target</div>
           <h3 className="target-card__title">{chainLabel(target.chain_name)}</h3>
         </div>
         <StatusBadge

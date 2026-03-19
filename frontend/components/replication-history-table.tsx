@@ -28,7 +28,7 @@ export function ReplicationHistoryTable({ roots, maxItems }: Props) {
 
       {visibleRoots.length === 0 ? (
         <p className="history__empty">
-          No completed replications yet. Rows will appear here once the first
+          No completed broadcasts yet. Rows will appear here once the first
           root has been relayed to at least one destination chain.
         </p>
       ) : (

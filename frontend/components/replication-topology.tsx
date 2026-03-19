@@ -264,7 +264,7 @@ export function ReplicationTopology({
                 tone={sourceState.proofReady ? "success" : "muted"}
               />
               <SourceRow
-                label="Replication"
+                label="Broadcast"
                 value={sourceState.replicationLabel}
                 tone={sourceState.replicationTone}
               />
@@ -795,13 +795,13 @@ function targetStatusLabel(
 function fallbackTargetNote(displayState: TopologyTarget["display_state"]) {
   switch (displayState) {
     case "confirmed":
-      return "Replication completed for this target.";
+      return "Broadcast completed for this target.";
     case "submitting":
       return "Transaction submitted and awaiting confirmation.";
     case "queued":
       return "Ready to receive the shared proof.";
     case "failed":
-      return "The target needs another replication attempt.";
+      return "The target needs another broadcast attempt.";
     case "blocked":
       return "This target is waiting on the shared upstream stage.";
     default:

@@ -21,7 +21,7 @@ const STAGES: Stage[] = [
   {
     key: "proving",
     title: "Shared SP1 proof",
-    body: "Generate one proof artifact that every replication target can consume.",
+    body: "Generate one proof artifact that every broadcast target can consume.",
   },
   {
     key: "targets",

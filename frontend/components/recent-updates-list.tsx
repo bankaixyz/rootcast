@@ -9,7 +9,7 @@ export function RecentUpdatesList({ roots }: { roots: RootSnapshot[] }) {
       <div className="updates-list__header">
         <div>
           <div className="eyebrow">Recent updates</div>
-          <h3>Recent replication history</h3>
+          <h3>Recent broadcast history</h3>
         </div>
       </div>
 

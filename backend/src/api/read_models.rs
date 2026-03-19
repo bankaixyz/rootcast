@@ -264,7 +264,7 @@ fn stage(snapshot: &JobSnapshot) -> StageInfo {
         ReplicationJobState::ReadyToProve => StageInfo {
             label: "Queued for proving",
             description:
-                "The source block is finalized, and the replication job is queued to generate the shared SP1 proof."
+                "The source block is finalized, and the broadcast job is queued to generate the shared SP1 proof."
                     .to_string(),
             blocked_by: Some("proving"),
         },
@@ -276,30 +276,30 @@ fn stage(snapshot: &JobSnapshot) -> StageInfo {
             blocked_by: Some("proving"),
         },
         ReplicationJobState::ProofReady => StageInfo {
-            label: "Ready to replicate",
+            label: "Ready to broadcast",
             description:
                 "The shared SP1 proof is ready, and destination submissions can begin."
                     .to_string(),
             blocked_by: None,
         },
         ReplicationJobState::Submitting => StageInfo {
-            label: "Replicating to targets",
+            label: "Broadcasting to targets",
             description:
                 "The shared proof is ready, and the backend is sending or confirming submissions across destination chains."
                     .to_string(),
             blocked_by: None,
         },
         ReplicationJobState::Completed => StageInfo {
-            label: "Replication complete",
+            label: "Broadcast complete",
             description:
-                "Every configured destination chain confirmed the latest replicated World ID root."
+                "Every configured destination chain confirmed the latest World ID root."
                     .to_string(),
             blocked_by: None,
         },
         ReplicationJobState::Failed => StageInfo {
             label: "Needs attention",
             description: snapshot.job_error_message.clone().unwrap_or_else(|| {
-                "The latest replication job failed before every target settled successfully."
+                "The latest broadcast job failed before every target settled successfully."
                     .to_string()
             }),
             blocked_by: None,
