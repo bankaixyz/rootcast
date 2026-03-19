@@ -9,9 +9,11 @@ use alloy_sol_types::{sol, SolEvent};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 
 const DEFAULT_EVENT_LOOKBACK_BLOCKS: u64 = 2_048;
+const WATCHER_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 
 sol! {
     event TreeChanged(uint256 indexed preRoot, uint8 indexed kind, uint256 indexed postRoot);
@@ -47,14 +49,17 @@ impl RootWatcher for WorldIdWatcher {
         pool: &SqlitePool,
         destinations: &[DestinationChainConfig],
     ) -> Result<()> {
-        let provider = ProviderBuilder::new()
-            .connect(self.rpc_url.as_str())
-            .await
-            .context("connect watcher provider")?;
+        let provider = timeout(
+            WATCHER_RPC_TIMEOUT,
+            ProviderBuilder::new().connect(self.rpc_url.as_str()),
+        )
+        .await
+        .context("timed out connecting watcher provider")?
+        .context("connect watcher provider")?;
 
-        let latest_block = provider
-            .get_block_number()
+        let latest_block = timeout(WATCHER_RPC_TIMEOUT, provider.get_block_number())
             .await
+            .context("timed out fetching latest execution block")?
             .context("fetch latest execution block")?;
 
         let from_block = match db::latest_observed_source_block(pool).await? {
@@ -72,9 +77,9 @@ impl RootWatcher for WorldIdWatcher {
             .from_block(from_block)
             .to_block(latest_block);
 
-        let logs = provider
-            .get_logs(&filter)
+        let logs = timeout(WATCHER_RPC_TIMEOUT, provider.get_logs(&filter))
             .await
+            .context("timed out fetching TreeChanged logs")?
             .context("fetch TreeChanged logs")?;
         if logs.is_empty() {
             return Ok(());

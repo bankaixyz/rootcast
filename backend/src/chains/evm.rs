@@ -9,6 +9,9 @@ use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{sol, SolCall};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use tokio::time::{timeout, Duration};
+
+const EVM_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 
 sol! {
     function submitRoot(bytes proofBytes, bytes publicValues) external;
@@ -31,17 +34,21 @@ impl EvmSubmitter {
             .with_context(|| format!("parse {} private key", self.destination.name()))?;
         let wallet = EthereumWallet::from(signer);
 
-        ProviderBuilder::new()
-            .with_chain_id(
-                self.destination
-                    .chain
-                    .evm_chain_id()
-                    .context("missing EVM chain id for destination")?,
-            )
-            .wallet(wallet)
-            .connect(self.destination.rpc_url.as_str())
-            .await
-            .with_context(|| format!("connect {} provider", self.destination.name()))
+        timeout(
+            EVM_RPC_TIMEOUT,
+            ProviderBuilder::new()
+                .with_chain_id(
+                    self.destination
+                        .chain
+                        .evm_chain_id()
+                        .context("missing EVM chain id for destination")?,
+                )
+                .wallet(wallet)
+                .connect(self.destination.rpc_url.as_str()),
+        )
+        .await
+        .with_context(|| format!("timed out connecting {} provider", self.destination.name()))?
+        .with_context(|| format!("connect {} provider", self.destination.name()))
     }
 }
 
@@ -61,9 +68,14 @@ impl SubmissionClient for EvmSubmitter {
             .to(registry_address)
             .input(TransactionInput::both(call.abi_encode().into()));
 
-        let pending = provider
-            .send_transaction(transaction)
+        let pending = timeout(EVM_RPC_TIMEOUT, provider.send_transaction(transaction))
             .await
+            .with_context(|| {
+                format!(
+                    "timed out sending {} submitRoot transaction",
+                    self.destination.name()
+                )
+            })?
             .with_context(|| format!("send {} submitRoot transaction", self.destination.name()))?;
 
         Ok(pending.tx_hash().to_string())
@@ -71,10 +83,18 @@ impl SubmissionClient for EvmSubmitter {
 
     async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck> {
         let provider = self.provider().await?;
-        let receipt = provider
-            .get_transaction_receipt(tx_hash.parse()?)
-            .await
-            .with_context(|| format!("fetch {} transaction receipt", self.destination.name()))?;
+        let receipt = timeout(
+            EVM_RPC_TIMEOUT,
+            provider.get_transaction_receipt(tx_hash.parse()?),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "timed out fetching {} transaction receipt",
+                self.destination.name()
+            )
+        })?
+        .with_context(|| format!("fetch {} transaction receipt", self.destination.name()))?;
 
         let Some(receipt) = receipt else {
             return Ok(SubmissionCheck::Pending);

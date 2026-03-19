@@ -103,16 +103,17 @@ impl Runner {
 
     pub async fn run_forever(self) -> Result<()> {
         loop {
-            self.advance_once().await?;
+            if let Err(error) = self.advance_once().await {
+                warn!(?error, "replication runner tick failed");
+            }
             sleep(LOOP_INTERVAL).await;
         }
     }
 
     pub async fn advance_once(&self) -> Result<()> {
-        self.watcher
-            .poll_once(&self.pool, &self.destinations)
-            .await
-            .context("poll World ID watcher")?;
+        if let Err(error) = self.watcher.poll_once(&self.pool, &self.destinations).await {
+            warn!(?error, "failed to poll World ID watcher");
+        }
 
         db::repair_inflight_jobs(&self.pool).await?;
 
@@ -122,7 +123,19 @@ impl Runner {
         }
 
         for job in jobs {
-            self.advance_job(job).await?;
+            let job_id = job.job_id;
+            let root_hex = job.root_hex.clone();
+            let source_block_number = job.source_block_number;
+
+            if let Err(error) = self.advance_job(job).await {
+                warn!(
+                    ?error,
+                    job_id,
+                    root = %root_hex,
+                    source_block_number,
+                    "failed to advance replication job"
+                );
+            }
         }
 
         Ok(())
@@ -151,8 +164,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch Bankai finality"
                 );
-                self.mark_job_retryable_or_failed(
-                    &job,
+                self.mark_job_retryable(
+                    job.job_id,
                     ReplicationJobState::WaitingFinality,
                     &error.to_string(),
                 )
@@ -217,8 +230,8 @@ impl Runner {
                     source_block_number = job.source_block_number,
                     "failed to fetch exact Bankai proof bundle"
                 );
-                self.mark_job_retryable_or_failed(
-                    &job,
+                self.mark_job_retryable(
+                    job.job_id,
                     ReplicationJobState::ReadyToProve,
                     &error.to_string(),
                 )
@@ -429,8 +442,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to confirm submission"
                 );
-                self.mark_submission_retryable_or_failed(
-                    submission,
+                self.mark_submission_retryable(
+                    submission.submission_id,
                     ChainSubmissionState::Submitting,
                     &error.to_string(),
                 )
@@ -524,6 +537,15 @@ impl Runner {
         db::mark_job_retryable(&self.pool, job.job_id, state, message).await
     }
 
+    async fn mark_job_retryable(
+        &self,
+        job_id: i64,
+        state: ReplicationJobState,
+        message: &str,
+    ) -> Result<()> {
+        db::mark_job_retryable(&self.pool, job_id, state, message).await
+    }
+
     async fn mark_submission_retryable_or_failed(
         &self,
         submission: &ChainSubmission,
@@ -541,6 +563,15 @@ impl Runner {
         }
 
         db::mark_submission_retryable(&self.pool, submission.submission_id, state, message).await
+    }
+
+    async fn mark_submission_retryable(
+        &self,
+        submission_id: i64,
+        state: ChainSubmissionState,
+        message: &str,
+    ) -> Result<()> {
+        db::mark_submission_retryable(&self.pool, submission_id, state, message).await
     }
 }
 
@@ -580,6 +611,25 @@ mod tests {
         }
     }
 
+    struct FailOnceWatcher {
+        calls: AtomicU64,
+    }
+
+    #[async_trait]
+    impl RootWatcher for FailOnceWatcher {
+        async fn poll_once(
+            &self,
+            _pool: &SqlitePool,
+            _destinations: &[DestinationChainConfig],
+        ) -> Result<()> {
+            if self.calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                anyhow::bail!("watcher transport error")
+            }
+
+            Ok(())
+        }
+    }
+
     struct StaticFinalityClient {
         height: u64,
     }
@@ -606,6 +656,15 @@ mod tests {
     impl ProofBundleClient for StaticBundleClient {
         async fn fetch_exact_block_bundle(&self, _source_block_number: u64) -> Result<Vec<u8>> {
             Ok(vec![1, 2, 3, 4])
+        }
+    }
+
+    struct FailingBundleClient;
+
+    #[async_trait]
+    impl ProofBundleClient for FailingBundleClient {
+        async fn fetch_exact_block_bundle(&self, _source_block_number: u64) -> Result<Vec<u8>> {
+            anyhow::bail!("bankai bundle unavailable")
         }
     }
 
@@ -699,6 +758,29 @@ mod tests {
 
         let job = db::next_active_job(&pool).await.unwrap().unwrap();
         assert_eq!(job.job_state, ReplicationJobState::WaitingFinality);
+    }
+
+    #[tokio::test]
+    async fn run_forever_does_not_exit_on_tick_error() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+
+        let runner = Runner::new_for_tests(
+            pool,
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(FailOnceWatcher {
+                calls: AtomicU64::new(0),
+            }),
+            Arc::new(StaticFinalityClient { height: 0 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        let result = tokio::time::timeout(Duration::from_millis(20), runner.run_forever()).await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -848,6 +930,189 @@ mod tests {
         assert_eq!(
             job.job_error_message.as_deref(),
             Some("bankai finality unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn watcher_failure_does_not_block_existing_jobs() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [5u8; 32], 100, "0xabc").await;
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(FailOnceWatcher {
+                calls: AtomicU64::new(0),
+            }),
+            Arc::new(StaticFinalityClient { height: 100 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+    }
+
+    #[tokio::test]
+    async fn one_job_error_does_not_block_other_active_jobs() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+
+        record_root(&pool, &destinations, [3u8; 32], 10, "0xold").await;
+        let old_job = db::next_active_job(&pool).await.unwrap().unwrap();
+        db::mark_job_proof_ready(&pool, old_job.job_id, "/tmp/fake-proof-old")
+            .await
+            .unwrap();
+
+        record_root(&pool, &destinations, [4u8; 32], 20, "0xnew").await;
+        let new_job_id = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM replication_jobs WHERE observed_root_id != ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(old_job.observed_root_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            HashMap::new(),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 20 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+
+        let new_job = db::job_snapshot(&pool, new_job_id).await.unwrap().unwrap();
+        assert_eq!(new_job.job_state, ReplicationJobState::ReadyToProve);
+        assert_eq!(new_job.bankai_finalized_block_number, Some(20));
+    }
+
+    #[tokio::test]
+    async fn repeated_finality_rpc_failures_remain_retryable() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [3u8; 32], 55, "0xbbb").await;
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(NoopWatcher),
+            Arc::new(FailingFinalityClient),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        for _ in 0..6 {
+            runner.advance_once().await.unwrap();
+        }
+
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::WaitingFinality);
+        assert_eq!(job.job_retry_count, 6);
+    }
+
+    #[tokio::test]
+    async fn repeated_bundle_fetch_failures_remain_retryable() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [3u8; 32], 55, "0xbbb").await;
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations.clone(),
+            fake_clients_for(&destinations),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 55 }),
+            Arc::new(FailingBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        for _ in 0..6 {
+            runner.advance_once().await.unwrap();
+        }
+
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        assert_eq!(job.job_state, ReplicationJobState::ReadyToProve);
+        assert_eq!(job.job_retry_count, 6);
+        assert_eq!(
+            job.job_error_message.as_deref(),
+            Some("bankai bundle unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_confirmation_rpc_failures_remain_retryable() {
+        let pool = test_pool().await;
+        let destinations = vec![destination(DestinationChain::BaseSepolia)];
+        record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
+
+        let base = Arc::new(FakeSubmissionClient {
+            submitted: Mutex::new(Vec::new()),
+            submit_error: None,
+            check_results: Mutex::new(vec![
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+                Err(anyhow::anyhow!("receipt rpc unavailable")),
+            ]),
+        });
+
+        let runner = Runner::new_for_tests(
+            pool.clone(),
+            destinations,
+            HashMap::from([("base-sepolia", base as Arc<dyn SubmissionClient>)]),
+            Arc::new(NoopWatcher),
+            Arc::new(StaticFinalityClient { height: 12_345 }),
+            Arc::new(StaticBundleClient),
+            Arc::new(FakeProofService {
+                prove_calls: AtomicU64::new(0),
+            }),
+        );
+
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+        runner.advance_once().await.unwrap();
+
+        for _ in 0..6 {
+            runner.advance_once().await.unwrap();
+        }
+
+        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        let submission = db::job_submissions(&pool, job.job_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert_eq!(job.job_state, ReplicationJobState::Submitting);
+        assert_eq!(
+            submission.submission_state,
+            ChainSubmissionState::Submitting
+        );
+        assert_eq!(submission.submission_retry_count, 6);
+        assert_eq!(
+            submission.submission_error_message.as_deref(),
+            Some("receipt rpc unavailable")
         );
     }
 

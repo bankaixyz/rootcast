@@ -12,70 +12,93 @@ use solana_sdk::signature::{Keypair, Signature, Signer};
 use solana_sdk::transaction::Transaction;
 use std::fs;
 use std::str::FromStr;
+use tokio::task::spawn_blocking;
+use tokio::time::{timeout, Duration};
 
 const COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const ROOT_SEED: &[u8] = b"root";
 const STATE_SEED: &[u8] = b"state";
+const SOLANA_SUBMIT_TIMEOUT: Duration = Duration::from_secs(45);
+const SOLANA_STATUS_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct SolanaSubmitter {
     destination: DestinationChainConfig,
-    keypair: Keypair,
-    rpc_client: RpcClient,
 }
 
 impl SolanaSubmitter {
     pub fn new(destination: DestinationChainConfig) -> Result<Self> {
-        let keypair = load_solana_keypair(&destination.private_key)?;
-        let rpc_client = RpcClient::new_with_commitment(
-            destination.rpc_url.clone(),
-            CommitmentConfig::confirmed(),
-        );
+        load_solana_keypair(&destination.private_key)?;
 
-        Ok(Self {
-            destination,
-            keypair,
-            rpc_client,
-        })
+        Ok(Self { destination })
     }
 }
 
 #[async_trait]
 impl SubmissionClient for SolanaSubmitter {
     async fn submit_artifact(&self, contract_address: &str, artifact_path: &str) -> Result<String> {
-        let program_id = parse_pubkey(contract_address, self.destination.name())?;
-        let proof = load_proof(artifact_path)?;
-        let public_values = proof.public_values.to_vec();
-        let decoded = decode_public_values(&public_values)?;
-        let (state_pda, _) = state_pda(&program_id);
-        let (root_record_pda, _) = root_record_pda(&program_id, decoded.source_block_number);
+        let destination = self.destination.clone();
+        let contract_address = contract_address.to_string();
+        let artifact_path = artifact_path.to_string();
 
-        let instruction = submit_root_instruction(
-            program_id,
-            self.keypair.pubkey(),
-            state_pda,
-            root_record_pda,
-            decoded.source_block_number,
-            public_values,
-            proof.bytes(),
-        )?;
+        timeout(
+            SOLANA_SUBMIT_TIMEOUT,
+            spawn_blocking(move || {
+                let program_id = parse_pubkey(&contract_address, destination.name())?;
+                let keypair = load_solana_keypair(&destination.private_key)?;
+                let rpc_client = RpcClient::new_with_commitment(
+                    destination.rpc_url.clone(),
+                    CommitmentConfig::confirmed(),
+                );
+                let proof = load_proof(&artifact_path)?;
+                let public_values = proof.public_values.to_vec();
+                let decoded = decode_public_values(&public_values)?;
+                let (state_pda, _) = state_pda(&program_id);
+                let (root_record_pda, _) =
+                    root_record_pda(&program_id, decoded.source_block_number);
 
-        send_instruction(
-            &self.rpc_client,
-            &self.keypair,
-            vec![
-                ComputeBudgetInstruction::set_compute_unit_limit(COMPUTE_UNIT_LIMIT),
-                instruction,
-            ],
+                let instruction = submit_root_instruction(
+                    program_id,
+                    keypair.pubkey(),
+                    state_pda,
+                    root_record_pda,
+                    decoded.source_block_number,
+                    public_values,
+                    proof.bytes(),
+                )?;
+
+                send_instruction(
+                    &rpc_client,
+                    &keypair,
+                    vec![
+                        ComputeBudgetInstruction::set_compute_unit_limit(COMPUTE_UNIT_LIMIT),
+                        instruction,
+                    ],
+                )
+            }),
         )
+        .await
+        .with_context(|| format!("timed out sending {} transaction", self.destination.name()))?
+        .context("join Solana submit task")?
     }
 
     async fn check_submission(&self, tx_hash: &str) -> Result<SubmissionCheck> {
         let signature: Signature = tx_hash
             .parse()
             .with_context(|| format!("parse {} transaction signature", self.destination.name()))?;
-        let statuses = self
-            .rpc_client
-            .get_signature_statuses_with_history(&[signature])?;
+        let rpc_url = self.destination.rpc_url.clone();
+        let chain_name = self.destination.name();
+        let statuses = timeout(
+            SOLANA_STATUS_TIMEOUT,
+            spawn_blocking(move || {
+                let rpc_client =
+                    RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+                rpc_client.get_signature_statuses_with_history(&[signature])
+            }),
+        )
+        .await
+        .with_context(|| format!("timed out fetching {chain_name} transaction status"))?
+        .context("join Solana status task")?
+        .with_context(|| format!("fetch {chain_name} transaction status"))?;
         let Some(status) = statuses.value.into_iter().next().flatten() else {
             return Ok(SubmissionCheck::Pending);
         };

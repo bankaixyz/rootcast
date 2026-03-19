@@ -4,6 +4,9 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use bankai_sdk::{Bankai, HashingFunction};
 use bincode::serialize;
+use tokio::time::{timeout, Duration};
+
+const BANKAI_BUNDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[async_trait]
 pub trait ProofBundleClient: Send + Sync {
@@ -25,21 +28,26 @@ impl BankaiProofBundleClient {
 #[async_trait]
 impl ProofBundleClient for BankaiProofBundleClient {
     async fn fetch_exact_block_bundle(&self, source_block_number: u64) -> Result<Vec<u8>> {
-        let bundle = self
-            .bankai
-            .init_batch(None, HashingFunction::Keccak)
-            .await
-            .context("initialize Bankai proof batch")?
-            .ethereum_storage_slot(
-                source_block_number,
-                SEPOLIA_IDENTITY_MANAGER,
-                vec![LATEST_ROOT_SLOT],
-            )
-            .execute()
-            .await
-            .with_context(|| {
-                format!("fetch storage-slot proof bundle for block {source_block_number}")
-            })?;
+        let bundle = timeout(BANKAI_BUNDLE_TIMEOUT, async {
+            self.bankai
+                .init_batch(None, HashingFunction::Keccak)
+                .await
+                .context("initialize Bankai proof batch")?
+                .ethereum_storage_slot(
+                    source_block_number,
+                    SEPOLIA_IDENTITY_MANAGER,
+                    vec![LATEST_ROOT_SLOT],
+                )
+                .execute()
+                .await
+                .with_context(|| {
+                    format!("fetch storage-slot proof bundle for block {source_block_number}")
+                })
+        })
+        .await
+        .with_context(|| {
+            format!("timed out fetching Bankai proof bundle for block {source_block_number}")
+        })??;
 
         serialize(&bundle).context("serialize Bankai proof bundle")
     }
