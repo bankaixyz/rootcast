@@ -65,7 +65,7 @@ export function ReplicationCard({ root }: { root: RootSnapshot }) {
             rel="noreferrer"
             target="_blank"
           >
-            {root.source_tx_hash}
+            {shortHash(root.source_tx_hash, 8, 6)}
           </a>
           <span className="history-card__sep">·</span>
           <span className="history-card__block">

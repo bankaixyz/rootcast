@@ -20,7 +20,7 @@ export function Navbar({ currentPage = "landing" }: NavbarProps) {
           </a>
         )}
         <a
-          href="https://sepolia.dashboard.bankai.xyz"
+          href="https://bankai.xyz"
           className="landing-nav__link"
           target="_blank"
           rel="noreferrer"

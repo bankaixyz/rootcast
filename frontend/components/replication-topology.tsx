@@ -169,8 +169,6 @@ export function ReplicationTopology({
   const bottomGeometries = geometries.filter((geometry) => geometry.direction === 1);
   const sharedFlow = buildSharedFlowGeometry({
     bottomGeometries,
-    canvasHeight,
-    cardHeight,
     endX,
     hubX,
     hubY,
@@ -718,39 +716,28 @@ function flowSpineX(hubX: number, endX: number) {
 
 function buildSharedFlowGeometry({
   bottomGeometries,
-  canvasHeight,
-  cardHeight,
   endX,
   hubX,
   hubY,
   topGeometries,
 }: {
   bottomGeometries: FlowGeometry[];
-  canvasHeight: number;
-  cardHeight: number;
   endX: number;
   hubX: number;
   hubY: number;
   topGeometries: FlowGeometry[];
 }): SharedFlowGeometry {
   const spineX = flowSpineX(hubX, endX);
-  const visibilityBuffer = Math.max(18, cardHeight * 0.35);
-  const visibleTopGeometries = topGeometries.filter((geometry) =>
-    isFlowGeometryVisible(geometry, canvasHeight, visibilityBuffer),
-  );
-  const visibleBottomGeometries = bottomGeometries.filter((geometry) =>
-    isFlowGeometryVisible(geometry, canvasHeight, visibilityBuffer),
-  );
-  const topExtentY = (visibleTopGeometries.reduce<number | null>(
+  const topExtentY = topGeometries.reduce<number | null>(
     (closest, geometry) =>
       closest === null ? geometry.divergenceY : Math.min(closest, geometry.divergenceY),
     null,
-  ) ?? null);
-  const bottomExtentY = (visibleBottomGeometries.reduce<number | null>(
+  );
+  const bottomExtentY = bottomGeometries.reduce<number | null>(
     (closest, geometry) =>
       closest === null ? geometry.divergenceY : Math.max(closest, geometry.divergenceY),
     null,
-  ) ?? null);
+  );
 
   return {
     bottomPath:
@@ -762,17 +749,6 @@ function buildSharedFlowGeometry({
         ? null
         : buildSharedBranchPath(hubX, hubY, spineX, -1, topExtentY),
   };
-}
-
-function isFlowGeometryVisible(
-  geometry: FlowGeometry,
-  canvasHeight: number,
-  visibilityBuffer: number,
-) {
-  return (
-    geometry.targetY >= -visibilityBuffer &&
-    geometry.targetY <= canvasHeight + visibilityBuffer
-  );
 }
 
 function buildSharedBranchPath(
