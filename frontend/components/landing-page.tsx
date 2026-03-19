@@ -210,7 +210,7 @@ export function LandingPage({ snapshot }: LandingPageProps) {
       <section className="landing-section">
         <span className="landing-section__eyebrow">Live status</span>
         <h2 className="landing-section__title">
-          Broadcast across the ecosystem
+          Latest Broadcast
         </h2>
         {snapshot ? (
           <ReplicationCard root={snapshot} />
