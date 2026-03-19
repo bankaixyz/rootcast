@@ -10,7 +10,9 @@ COPY program ./program
 
 RUN cargo build --release -p world-id-root-replicator-backend
 
-FROM --platform=linux/amd64 debian:bookworm-slim AS runtime
+FROM --platform=linux/amd64 ubuntu:24.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libsqlite3-0 \
