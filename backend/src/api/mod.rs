@@ -14,6 +14,7 @@ use read_models::{
 };
 use serde_json::json;
 use sqlx::SqlitePool;
+use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone)]
 struct AppState {
@@ -30,6 +31,10 @@ pub fn router(pool: SqlitePool, destination_chains: Vec<DestinationChainConfig>)
             registry_address: chain.contract_address,
         })
         .collect();
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
 
     Router::new()
         .route("/api/status", get(status))
@@ -37,6 +42,7 @@ pub fn router(pool: SqlitePool, destination_chains: Vec<DestinationChainConfig>)
         .route("/api/roots", get(roots))
         .route("/api/chains", get(chains))
         .route("/api/jobs/:id", get(job_detail))
+        .layer(cors)
         .with_state(AppState {
             pool,
             configured_chains,
@@ -148,6 +154,7 @@ mod tests {
     use crate::config::DestinationChainConfig;
     use crate::jobs::types::{DestinationChain, ObservedRoot, ReplicationJobState};
     use axum::body::{to_bytes, Body};
+    use axum::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, ORIGIN};
     use axum::http::Request;
     use serde_json::Value;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -320,6 +327,28 @@ mod tests {
         assert_eq!(
             chain_by_name(chains, "plasma-testnet")["display_state"],
             "queued"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_responses_include_cors_headers() {
+        let pool = test_pool().await;
+        let app = router(pool, all_destinations());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/status")
+                    .header(ORIGIN, "https://world-id-replicator.pages.dev")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN).unwrap(),
+            "*"
         );
     }
 

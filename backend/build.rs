@@ -1,6 +1,7 @@
 fn main() {
-    let manifest_dir =
-        std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("backend manifest dir"));
+    let manifest_dir = std::path::PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("backend manifest dir"),
+    );
     let elf_path = manifest_dir
         .join("../program/elf/world-id-root-replicator-program")
         .canonicalize()

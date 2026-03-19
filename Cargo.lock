@@ -14315,6 +14315,7 @@ dependencies = [
  "starknet 0.17.0",
  "tokio",
  "tower 0.5.3",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
