@@ -1,7 +1,7 @@
 use crate::chains::{SubmissionCheck, SubmissionClient};
 use crate::config::DestinationChainConfig;
 use crate::proving::sp1::{starknet_proof_calldata, ProgramVkey};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use starknet::{
     accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount},
@@ -113,7 +113,7 @@ impl SubmissionClient for StarknetSubmitter {
         {
             Ok(receipt) => receipt,
             Err(ProviderError::StarknetError(StarknetError::TransactionHashNotFound)) => {
-                return Ok(SubmissionCheck::Pending);
+                return Err(anyhow!("starknet transaction {tx_hash} not found by RPC"));
             }
             Err(error) => {
                 return Err(error)

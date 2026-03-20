@@ -445,8 +445,8 @@ impl Runner {
                     chain = %submission.chain_name,
                     "failed to confirm submission"
                 );
-                self.mark_submission_retryable(
-                    submission.submission_id,
+                self.mark_submission_retryable_or_failed(
+                    submission,
                     ChainSubmissionState::Submitting,
                     &error.to_string(),
                 )
@@ -568,14 +568,6 @@ impl Runner {
         db::mark_submission_retryable(&self.pool, submission.submission_id, state, message).await
     }
 
-    async fn mark_submission_retryable(
-        &self,
-        submission_id: i64,
-        state: ChainSubmissionState,
-        message: &str,
-    ) -> Result<()> {
-        db::mark_submission_retryable(&self.pool, submission_id, state, message).await
-    }
 }
 
 fn is_terminal_proving_error(error: &anyhow::Error) -> bool {
@@ -1061,7 +1053,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn repeated_confirmation_rpc_failures_remain_retryable() {
+    async fn repeated_confirmation_rpc_failures_fail_after_retry_limit() {
         let pool = test_pool().await;
         let destinations = vec![destination(DestinationChain::BaseSepolia)];
         record_root(&pool, &destinations, [7u8; 32], 12_345, "0xdef").await;
@@ -1095,11 +1087,13 @@ mod tests {
         runner.advance_once().await.unwrap();
         runner.advance_once().await.unwrap();
 
-        for _ in 0..6 {
+        for _ in 0..5 {
             runner.advance_once().await.unwrap();
         }
 
-        let job = db::next_active_job(&pool).await.unwrap().unwrap();
+        assert!(db::next_active_job(&pool).await.unwrap().is_none());
+
+        let job = db::job_snapshot(&pool, 1).await.unwrap().unwrap();
         let submission = db::job_submissions(&pool, job.job_id)
             .await
             .unwrap()
@@ -1107,15 +1101,12 @@ mod tests {
             .next()
             .unwrap();
 
-        assert_eq!(job.job_state, ReplicationJobState::Submitting);
-        assert_eq!(
-            submission.submission_state,
-            ChainSubmissionState::Submitting
-        );
-        assert_eq!(submission.submission_retry_count, 6);
+        assert_eq!(job.job_state, ReplicationJobState::Failed);
+        assert_eq!(submission.submission_state, ChainSubmissionState::Failed);
+        assert_eq!(submission.submission_retry_count, 5);
         assert_eq!(
             submission.submission_error_message.as_deref(),
-            Some("receipt rpc unavailable")
+            Some("retry limit reached after 5 attempts: receipt rpc unavailable")
         );
     }
 

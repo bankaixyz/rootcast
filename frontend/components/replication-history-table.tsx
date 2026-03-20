@@ -50,6 +50,9 @@ export function ReplicationCard({ root }: { root: RootSnapshot }) {
   const confirmed = sortedTargets.filter(
     (t) => t.display_state === "confirmed",
   ).length;
+  const submitting = sortedTargets.filter(
+    (t) => t.display_state === "submitting",
+  ).length;
   const failed = sortedTargets.filter(
     (t) => t.display_state === "failed",
   ).length;
@@ -82,6 +85,11 @@ export function ReplicationCard({ root }: { root: RootSnapshot }) {
               {confirmed} confirmed
             </span>
           )}
+          {submitting > 0 && (
+            <span className="history-card__count history-card__count--active">
+              {submitting} submitting
+            </span>
+          )}
           {failed > 0 && (
             <span className="history-card__count history-card__count--fail">
               {failed} failed
@@ -101,6 +109,12 @@ export function ReplicationCard({ root }: { root: RootSnapshot }) {
 
 function TargetChip({ target }: { target: ReplicationTarget }) {
   const fail = target.display_state === "failed";
+  const dotClass =
+    target.display_state === "failed"
+      ? "history-chip__dot--fail"
+      : target.display_state === "confirmed"
+        ? "history-chip__dot--confirmed"
+        : "history-chip__dot--submitting";
 
   return (
     <a
@@ -109,9 +123,7 @@ function TargetChip({ target }: { target: ReplicationTarget }) {
       rel="noreferrer"
       target="_blank"
     >
-      <span
-        className={`history-chip__dot ${fail ? "history-chip__dot--fail" : "history-chip__dot--ok"}`}
-      />
+      <span className={`history-chip__dot ${dotClass}`} />
       <span className="history-chip__chain">
         {chainLabel(target.chain_name)}
       </span>

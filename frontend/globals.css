@@ -731,6 +731,10 @@ pre {
   color: var(--success);
 }
 
+.history-card__count--active {
+  color: var(--text);
+}
+
 .history-card__count--fail {
   color: var(--danger);
 }
@@ -778,9 +782,14 @@ pre {
   width: 7px;
 }
 
-.history-chip__dot--ok {
+.history-chip__dot--confirmed {
   background: var(--success);
   box-shadow: 0 0 8px rgba(92, 255, 184, 0.4);
+}
+
+.history-chip__dot--submitting {
+  animation: source-glow 3.2s ease-in-out infinite;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .history-chip__dot--fail {
