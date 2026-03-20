@@ -921,6 +921,45 @@ pub async fn mark_submission_failed_after_retry(
     Ok(())
 }
 
+pub async fn reset_job_for_retry(pool: &SqlitePool, job_id: i64) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE replication_jobs
+        SET
+            state = ?,
+            error_message = NULL,
+            retry_count = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ReplicationJobState::ProofReady.as_db_str())
+    .bind(job_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn reset_submission_for_retry(pool: &SqlitePool, submission_id: i64) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE chain_submissions
+        SET
+            state = ?,
+            tx_hash = NULL,
+            error_message = NULL,
+            retry_count = 0,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        "#,
+    )
+    .bind(ChainSubmissionState::Pending.as_db_str())
+    .bind(submission_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 fn to_i64(value: u64) -> Result<i64> {
     i64::try_from(value).context("u64 value does not fit in sqlite integer")
 }

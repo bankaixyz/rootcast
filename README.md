@@ -188,6 +188,17 @@ cargo run -p world-id-root-replicator-backend --bin submit_proof -- \
 Pass `--registry <address>` to override the configured destination
 contract for a single debugging run.
 
+Reset failed chain submissions for an existing job back to `pending` so
+the runner can retry them:
+
+```bash
+cargo run -p world-id-root-replicator-backend --bin retry_failed_submissions -- \
+  --job 66 \
+  --chain solana-devnet
+```
+
+Omit `--chain` to reset every failed chain submission on that job.
+
 Print the current SP1 program vkey:
 
 ```bash
