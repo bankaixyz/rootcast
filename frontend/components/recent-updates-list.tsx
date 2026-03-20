@@ -1,4 +1,4 @@
-import { RootSnapshot } from "@/lib/api";
+import { hasConfirmedBroadcast, RootSnapshot } from "@/lib/api";
 import { formatBlock, formatTimestamp, shortHash } from "@/lib/format";
 import { sourceTxUrl } from "@/lib/chain-metadata";
 import { StatusBadge, toneForDisplayState } from "@/components/status-badge";
@@ -38,7 +38,7 @@ export function RecentUpdatesList({ roots }: { roots: RootSnapshot[] }) {
                 <StatusBadge
                   label={root.stage_label}
                   tone={toneForDisplayState(
-                    root.job_state === "completed"
+                    root.job_state === "completed" || hasConfirmedBroadcast(root)
                       ? "confirmed"
                       : root.job_state === "failed"
                         ? "failed"

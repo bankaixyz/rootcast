@@ -1,4 +1,4 @@
-import { RootSnapshot } from "@/lib/api";
+import { hasConfirmedBroadcast, RootSnapshot } from "@/lib/api";
 import { formatBlock, formatTimestamp, shortHash } from "@/lib/format";
 import { sourceTxUrl } from "@/lib/chain-metadata";
 import { StatusBadge, toneForDisplayState } from "@/components/status-badge";
@@ -11,7 +11,7 @@ type RootUpdateCardProps = {
 };
 
 function stageTone(snapshot: RootSnapshot) {
-  if (snapshot.job_state === "completed") {
+  if (snapshot.job_state === "completed" || hasConfirmedBroadcast(snapshot)) {
     return "confirmed";
   }
 

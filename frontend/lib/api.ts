@@ -86,6 +86,10 @@ export function isSettledReplication(snapshot: RootSnapshot) {
   );
 }
 
+export function hasConfirmedBroadcast(snapshot: RootSnapshot) {
+  return snapshot.confirmed_target_count > 0;
+}
+
 export function getLatestSettledReplication(roots: RootSnapshot[]) {
   return roots.find(isSettledReplication) ?? null;
 }

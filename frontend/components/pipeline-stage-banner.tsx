@@ -1,4 +1,4 @@
-import { RootSnapshot } from "@/lib/api";
+import { hasConfirmedBroadcast, RootSnapshot } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 
 type Stage = {
@@ -65,7 +65,7 @@ function isComplete(snapshot: RootSnapshot, stageKey: string) {
     );
   }
 
-  return snapshot.job_state === "completed";
+  return snapshot.job_state === "completed" || hasConfirmedBroadcast(snapshot);
 }
 
 export function PipelineStageBanner({ snapshot }: { snapshot: RootSnapshot }) {
@@ -75,8 +75,11 @@ export function PipelineStageBanner({ snapshot }: { snapshot: RootSnapshot }) {
     <section className="stage-banner">
       {STAGES.map((stage) => {
         const complete = isComplete(snapshot, stage.key);
-        const current = stage.key === activeStage;
-        const failed = snapshot.job_state === "failed" && current;
+        const current = stage.key === activeStage && !complete;
+        const failed =
+          snapshot.job_state === "failed" &&
+          !hasConfirmedBroadcast(snapshot) &&
+          current;
 
         return (
           <article

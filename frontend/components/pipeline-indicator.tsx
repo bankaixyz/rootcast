@@ -1,4 +1,4 @@
-import type { RootSnapshot } from "@/lib/api";
+import { hasConfirmedBroadcast, type RootSnapshot } from "@/lib/api";
 
 const STEPS = [
   { key: "observe", label: "Observe" },
@@ -30,6 +30,10 @@ function isStepComplete(snapshot: RootSnapshot, key: StepKey): boolean {
   const order: StepKey[] = ["observe", "finalize", "prove", "replicate"];
   const activeIdx = order.indexOf(activeStep(snapshot));
   const stepIdx = order.indexOf(key);
+  if (key === "replicate") {
+    return snapshot.job_state === "completed" || hasConfirmedBroadcast(snapshot);
+  }
+
   return stepIdx < activeIdx || snapshot.job_state === "completed";
 }
 
@@ -55,7 +59,7 @@ export function PipelineIndicator({
 
   const allComplete = snapshot.job_state === "completed";
   const current = allComplete ? null : activeStep(snapshot);
-  const failed = snapshot.job_state === "failed";
+  const failed = snapshot.job_state === "failed" && !hasConfirmedBroadcast(snapshot);
 
   const stageLabel = errorMessage
     ? "Backend unreachable"
@@ -79,7 +83,7 @@ export function PipelineIndicator({
         <div className="pipeline__steps">
           {STEPS.map((step, i) => {
             const complete = isStepComplete(snapshot, step.key);
-            const isCurrent = !allComplete && step.key === current;
+            const isCurrent = !allComplete && !complete && step.key === current;
             const isFailed = failed && isCurrent;
 
             const cls = [
